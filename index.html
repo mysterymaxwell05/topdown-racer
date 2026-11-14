@@ -21,14 +21,14 @@ RR.VIEW_H = RR.MOBILE ? 480 : 270;
 RR.SIM_DT = 1 / 120;
 RR.DRIFT = {               // drift tuning (playtest 7)
   delay: 0.06,             // s of held hard turn (with throttle) before the slide starts
-  ramp: 0.15,              // s to reach full drift after that
+  ramp: 0.2,               // s to reach full drift after that (eased in/out, playtest 8: smoother)
   follow: 0.2,            // fraction of each heading change the velocity follows at full drift (lower = icier)
   sideGrip: 0.03,          // sideways grip multiplier at full drift (x car grip)
   scrub: 0.03,
   keep: 0.85,               // share of shed sideways speed turned into forward speed while drifting
-  swing: 0.5,              // extra nose rotation at full drift (+80%)
-  capStart: 70, capWidth: 20,   // slide angle (deg) where grip starts coming back, and over how many degrees
-  fadeGas: 0.6, fadeOff: 0.35,   // s to regain grip after the turn ends (gas held / gas released)
+  swing: 0.45,             // extra nose rotation at full drift
+  capStart: 68, capWidth: 30,   // slide angle (deg) where grip starts coming back, and over how many degrees
+  fadeGas: 0.75, fadeOff: 0.45,   // s to regain grip after the turn ends (gas held / gas released)
 };
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
@@ -76,15 +76,19 @@ RR.AI_PICKUP_WAIT_LONG = 15; // s after a bot's 2nd pickup within 20 s     // si
 
 // Car liveries: B body, b shade, L highlight, A accent, a accent-dark
 // Cars 1–6 are the selectable roster (6 cars per reviewer). Names unknown -> colour labels.
+// Car stats are levels 1-3 (shown as stars) with trade-offs - no starting car is best at everything.
+// Red / Green / Blue are from the original game (user); the 3 better cars are unlocked by finishing races.
+RR.STAT_LV = { top: [232, 248, 265], acc: [170, 189, 208], grip: [11.0, 12.5, 14.0], turn: [2.35, 2.45, 2.55] };
 RR.CARS = [
-  // Tuned after playtest feedback: higher grip (no drift on every turn), ~35% faster.
-  { id: 0, name: 'Team Blue',   B: '#3048c8', b: '#1c2a80', L: '#6a86ff', A: '#ff2d8a', a: '#a01858', top: 232, acc: 170, grip: 11.0, turn: 2.35 },
-  { id: 1, name: 'Team Green',  B: '#1f9a2e', b: '#10601a', L: '#5ad860', A: '#f0d020', a: '#9a8410', top: 237, acc: 175, grip: 11.5, turn: 2.38 },
-  { id: 2, name: 'Team Yellow', B: '#f0d020', b: '#a08a10', L: '#fff27a', A: '#2a2a2a', a: '#111111', top: 243, acc: 181, grip: 12.0, turn: 2.41 },
-  { id: 3, name: 'Team Black',  B: '#3a3a3e', b: '#1c1c20', L: '#7a7a82', A: '#b8b8b8', a: '#6a6a6a', top: 252, acc: 192, grip: 13.0, turn: 2.46 },
-  { id: 4, name: 'Team Flame',  B: '#e02a1a', b: '#901208', L: '#ff7a50', A: '#f2c21a', a: '#9a7a08', top: 258, acc: 200, grip: 13.5, turn: 2.49 },
-  { id: 5, name: 'Team Red',    B: '#d81c1c', b: '#8a0e0e', L: '#ff6a5a', A: '#e01818', a: '#8a0e0e', top: 265, acc: 208, grip: 14.0, turn: 2.55 },
+  { id: 0, name: 'Team Blue',   B: '#3048c8', b: '#1c2a80', L: '#6a86ff', A: '#ff2d8a', a: '#a01858', ts: 2, ac: 1, ti: 2, unlock: 0 },
+  { id: 1, name: 'Team Green',  B: '#1f9a2e', b: '#10601a', L: '#5ad860', A: '#f0d020', a: '#9a8410', ts: 1, ac: 3, ti: 2, unlock: 0 },
+  { id: 2, name: 'Team Yellow', B: '#f0d020', b: '#a08a10', L: '#fff27a', A: '#2a2a2a', a: '#111111', ts: 3, ac: 2, ti: 2, unlock: 3 },
+  { id: 3, name: 'Team Black',  B: '#3a3a3e', b: '#1c1c20', L: '#7a7a82', A: '#b8b8b8', a: '#6a6a6a', ts: 2, ac: 3, ti: 3, unlock: 6 },
+  { id: 4, name: 'Team Flame',  B: '#e02a1a', b: '#901208', L: '#ff7a50', A: '#f2c21a', a: '#9a7a08', ts: 3, ac: 3, ti: 2, unlock: 9 },
+  { id: 5, name: 'Team Red',    B: '#d81c1c', b: '#8a0e0e', L: '#ff6a5a', A: '#e01818', a: '#8a0e0e', ts: 2, ac: 2, ti: 1, unlock: 0 },
 ];
+RR.CARS.forEach(c => { const L = RR.STAT_LV; c.top = L.top[c.ts - 1]; c.acc = L.acc[c.ac - 1]; c.grip = L.grip[c.ti - 1]; c.turn = L.turn[c.ti - 1]; });
+RR.AI_STATS = { top: 259, acc: 203, grip: 14.0, turn: 2.55 };   // bots ~2% gentler than before, since the starting cars are slower than the old Red
 // Extra opponent-only livery [observed green/purple car]
 RR.AI_LIVERIES = [
   { name: 'Team Purple', B: '#7a3cc8', b: '#47207a', L: '#b07aff', A: '#3cc84a', a: '#1d7a26' },
@@ -564,7 +568,7 @@ RR.createRace = function (opts) {
     trackIndex: opts.trackIndex, twoPlayer: !!opts.twoPlayer, finishOrder: [], events: [], skidQueue: [] };
   const used = new Set(opts.players.map(p => p.carId));
   const aiPool = RR.CARS.filter(c => !used.has(c.id)).map(c => ({ liv: c, stats: c }))
-    .concat(RR.AI_LIVERIES.map(l => ({ liv: l, stats: RR.CARS[5] })));
+    .concat(RR.AI_LIVERIES.map(l => ({ liv: l, stats: RR.AI_STATS })));
   // shuffle opponents [observed: "power ups and other cars are slightly random"]
   for (let i = aiPool.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [aiPool[i], aiPool[j]] = [aiPool[j], aiPool[i]]; }
   const aiScale = RR.aiScaleForRace(opts.trackIndex);
@@ -582,7 +586,7 @@ RR.createRace = function (opts) {
       const o = aiPool[ai++ % aiPool.length];
       // all bots share the best car's base, each with its own pace + driving style so the pack spreads out
       const scale = aiScale * (0.90 + rnd() * 0.14);
-      car = makeCar(o.liv, RR.CARS[5], scale, g); car.player = -1; car.ai = true;
+      car = makeCar(o.liv, RR.AI_STATS, scale, g); car.player = -1; car.ai = true;
       car.aiOffset = (rnd() - 0.5) * T.W * 0.45;
       car.aiLook = 0.8 + rnd() * 0.45; car.aiBrave = 0.85 + rnd() * 0.3; car.aiWeave = rnd() * 6.28;
     }
@@ -658,7 +662,8 @@ function stepCar(race, c, dt) {
   if (hard && c.throttle) c.turnHold = (c.turnHold || 0) + dt; else c.turnHold = Math.max(0, (c.turnHold || 0) - dt * 3);
   if (hard && c.throttle && c.turnHold > RR.DRIFT.delay) c.drift = Math.min(1, (c.drift || 0) + dt / RR.DRIFT.ramp);
   else c.drift = Math.max(0, (c.drift || 0) - dt / (c.throttle ? RR.DRIFT.fadeGas : RR.DRIFT.fadeOff));
-  const dr = c.drift * Math.max(0, Math.min(1, (fast - 0.2) / 0.25));
+  const de = c.drift * c.drift * (3 - 2 * c.drift); // eased so the slide builds in and settles out smoothly
+  const dr = de * Math.max(0, Math.min(1, (fast - 0.2) / 0.25));
   c.driftAmt = dr;
   const gripFollow = Math.min(0.92, 0.6 + st.grip * 0.015) * (1 + 0.004 * c.up.grip);
   const follow = (gripFollow + (RR.DRIFT.follow - gripFollow) * dr) * Math.sqrt(fxS.grip);
@@ -1174,7 +1179,9 @@ if (RR.MOBILE) {
 }
 
 // ---------------- state ----------------
-const state = { screen: 'title', focus: 0, t: 0, notice: null, carSel: [save.lastCar, 4], selPlayer: 0, twoPlayer: false, track: 0, race: null, paused: false, debug: false, cams: [] };
+const racesDone = () => save.stars.filter(s => s > 0).length;          // races finished in the top 3
+const carLocked = i => racesDone() < (RR.CARS[i].unlock || 0);
+const state = { screen: 'title', focus: 0, t: 0, notice: null, carSel: [carLocked(save.lastCar) ? 5 : save.lastCar, 1], selPlayer: 0, twoPlayer: false, track: 0, race: null, paused: false, debug: false, cams: [] };
 RR.state = state;
 function go(screen) { state.screen = screen; state.pauseOpts = false; state.focus = screen === 'carselect' ? 7 : 0; state.t = 0; if (screen !== 'race') { A.stopEngines(); A.setMusic(musicModeFor(screen)); } }
 function notice(msg) { state.notice = msg; A.play('back'); }
@@ -1272,6 +1279,7 @@ function activate(b) { if (!b) return; A.play('menu'); b.act(); }
 function selectCar(i) { const p = state.selPlayer; if (state.twoPlayer && p === 1 && i === state.carSel[0]) return; state.carSel[p] = i; }
 function cycleCar(d) { const p = state.selPlayer; state.carSel[p] = (state.carSel[p] + d + 6) % 6; if (state.twoPlayer && state.carSel[0] === state.carSel[1] && p === 1) state.carSel[1] = (state.carSel[1] + d + 6) % 6; }
 function pickCar() {
+  { const id = state.carSel[state.selPlayer]; if (carLocked(id)) { const c = RR.CARS[id]; notice(c.name + ' is locked.\nFinish ' + c.unlock + ' races in the top 3 to unlock it\n(' + racesDone() + ' / ' + c.unlock + ' done).'); return; } }
   if (state.twoPlayer && state.selPlayer === 0) { state.selPlayer = 1; if (state.carSel[1] === state.carSel[0]) cycleCar(1); state.focus = 7; return; }
   save.lastCar = state.carSel[0]; persist();
   state.track = state.twoPlayer ? state.track : Math.min(save.unlocked, 17);
@@ -1341,9 +1349,12 @@ function finishRace() {
     const pos = st.indexOf(players[0]) + 1;
     res.pos = pos; res.stars = pos <= 3 ? 4 - pos : 0;
     const i = race.trackIndex;
+    const doneBefore = racesDone();
     if (res.stars > save.stars[i]) save.stars[i] = res.stars;
     if (players[0].finished && (!save.best[i] || players[0].finishTime < save.best[i])) save.best[i] = players[0].finishTime;
     if (pos <= 3 && i + 1 > save.unlocked && i < 17) { save.unlocked = i + 1; res.unlockedNext = true; }
+    const newCars = RR.CARS.filter(c => c.unlock && doneBefore < c.unlock && racesDone() >= c.unlock);
+    if (newCars.length) res.newCar = newCars.map(c => c.name).join(' & ');
     persist();
   }
   state.result = res; A.stopEngines(); A.play('finish'); go('results'); state.focus = buttons().length === 3 ? 2 : 1;
@@ -1511,6 +1522,12 @@ function drawLogo(cx, cy, sc) {
   ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(-36, 52); ctx.lineTo(36, 52); ctx.stroke();
   ctx.restore();
 }
+function drawPadlock(cx, cy) {
+  ctx.save(); ctx.lineWidth = 2.4; ctx.strokeStyle = '#ffcf40';
+  ctx.beginPath(); ctx.arc(cx, cy - 3, 4.2, Math.PI, 0); ctx.stroke();
+  ctx.fillStyle = '#ffcf40'; roundRect(ctx, cx - 6.5, cy - 3, 13, 10, 2); ctx.fill();
+  ctx.fillStyle = '#5a3a00'; ctx.fillRect(cx - 1, cy, 2, 4); ctx.restore();
+}
 function drawButton(b, focused) {
   ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0);
   const g = ctx.createLinearGradient(0, b.y, 0, b.y + b.h);
@@ -1524,7 +1541,9 @@ function drawButton(b, focused) {
   if (b.team != null) {
     ctx.imageSmoothingEnabled = false;
     const taken = state.twoPlayer && state.selPlayer === 1 && b.team === state.carSel[0];
-    ctx.globalAlpha = taken ? 0.35 : 1; ctx.drawImage(carSprites[b.team], b.x + b.w / 2 - 12, b.y + 4, 24, 31); ctx.globalAlpha = 1;
+    const lockd = carLocked(b.team);
+    ctx.globalAlpha = taken ? 0.35 : lockd ? 0.4 : 1; ctx.drawImage(carSprites[b.team], b.x + b.w / 2 - 12, b.y + 4, 24, 31); ctx.globalAlpha = 1;
+    if (lockd) drawPadlock(b.x + b.w / 2, b.y + b.h / 2 + 1);
     const tags = []; if (state.carSel[0] === b.team) tags.push('1UP'); if (state.twoPlayer && (state.selPlayer === 1 || state.carSel[1] !== state.carSel[0]) && state.carSel[1] === b.team && state.selPlayer === 1) tags.push('2UP');
     if (tags.length) { ctx.fillStyle = 'rgba(0,0,0,0.45)'; roundRect(ctx, b.x + 4, b.y + b.h + 3, b.w - 8, 11, 3); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.font = 'bold 8px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(tags.join(' '), b.x + b.w / 2, b.y + b.h + 9); }
@@ -1578,11 +1597,8 @@ function title(t, y) {
 function drawButtons() { buttons().forEach((b, i) => drawButton(b, i === state.focus)); }
 
 const carSprites = RR.CARS.map(c => RR.makeCarSprite(c));
-// stat stars 1-3 by rank within the roster (fixes old bars that overflowed after the speed retune)
-function statStars(key, id) {
-  const vals = RR.CARS.map(c => c[key]).sort((x, y) => x - y), r = vals.indexOf(RR.CARS[id][key]);
-  return 1 + Math.floor(r * 3 / RR.CARS.length);
-}
+// stat stars = the car's stat levels (1-3)
+function statStars(key, id) { const c = RR.CARS[id]; return key === 'top' ? c.ts : key === 'acc' ? c.ac : c.ti; }
 function smallStars(n, xRight, y) {
   ctx.fillStyle = '#fff';
   for (let k = 0; k < n; k++) { const cx = xRight - k * 10; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? 1.9 : 4.4; ctx.lineTo(cx + Math.cos(a) * rr, y + Math.sin(a) * rr); } ctx.fill(); }
@@ -1597,11 +1613,18 @@ function drawCarSelect() {
   ctx.imageSmoothingEnabled = false;
   const cx0 = RR.MOBILE ? 95 : 98, cy0 = RR.MOBILE ? 50 : 46;
   ctx.drawImage(shadowSpr, cx0 + 6, cy0 + 6, 80, 104); ctx.drawImage(carSprites[id], cx0, cy0, 80, 104);
-  const nx = RR.MOBILE ? 50 : 236, ny = RR.MOBILE ? 178 : 70, sx = RR.MOBILE ? 222 : 384, sy = RR.MOBILE ? 204 : 98;
+  const nx = RR.MOBILE ? 50 : 236, ny = RR.MOBILE ? 168 : 70, sx = RR.MOBILE ? 222 : 384, sy = RR.MOBILE ? 192 : 96;
   ctx.textAlign = RR.MOBILE ? 'center' : 'left'; ctx.font = 'bold 19px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillText(cd.name, RR.MOBILE ? VW / 2 : nx, ny);
   const rows = [['Top Speed', 'top'], ['Accelerate', 'acc'], ['Tires', 'grip']];
   ctx.font = 'bold 11px "Trebuchet MS","Segoe UI",sans-serif';
   rows.forEach((r, i) => { const y = sy + i * 16; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(r[0], nx, y); smallStars(statStars(r[1], id), sx, y); });
+  if (carLocked(id)) {
+    const ly = sy + 3 * 16 - 1, lx = RR.MOBILE ? VW / 2 : (nx + sx) / 2 - 2;
+    ctx.textAlign = 'center'; ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 11px "Trebuchet MS","Segoe UI",sans-serif';
+    ctx.fillText('LOCKED', lx, ly);
+    ctx.fillStyle = '#ffe9b0'; ctx.font = 'bold 9px "Trebuchet MS","Segoe UI",sans-serif';
+    ctx.fillText('Finish ' + cd.unlock + ' races in the top 3 (' + racesDone() + '/' + cd.unlock + ')', lx, ly + 11);
+  }
   ctx.restore();
   drawButtons();
 }
@@ -1631,6 +1654,7 @@ function drawResults() {
     ctx.textAlign = 'center'; ctx.font = 'bold 10px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillStyle = '#bcd0ff';
     const msg = 'Race ' + (race.trackIndex + 1) + ' — ' + (p <= 3 ? (r.unlockedNext ? 'Race ' + (race.trackIndex + 2) + ' unlocked!' : 'Qualified') : 'Finish in the top 3 to qualify');
     ctx.fillText(msg, VW / 2, RR.MOBILE ? 290 : 176);
+    if (r.newCar) { ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 12px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillText('New car unlocked: ' + r.newCar + '!', VW / 2, RR.MOBILE ? 312 : 194); }
   } else {
     players.forEach((o, k) => {
       const cx = k === 0 ? 150 : 330, num = String(o.pos), suf = ordinal(o.pos), sc = 9;
