@@ -88,7 +88,7 @@ RR.CARS = [
   { id: 5, name: 'Team Red',    B: '#d81c1c', b: '#8a0e0e', L: '#ff6a5a', A: '#e01818', a: '#8a0e0e', ts: 2, ac: 2, ti: 1, unlock: 0 },
 ];
 RR.CARS.forEach(c => { const L = RR.STAT_LV; c.top = L.top[c.ts - 1]; c.acc = L.acc[c.ac - 1]; c.grip = L.grip[c.ti - 1]; c.turn = L.turn[c.ti - 1]; });
-RR.AI_CAR_BOOST = 0.022;   // bot pace +2.2% per star your car has above the starting cars (5 stars)
+RR.AI_CAR_BOOST = 0.01;    // bot pace +1% per star your car has above the starting cars (playtest 11: 2.2% was too hard)
 RR.CAR_ORDER = [5, 0, 1, 4, 2, 3];   // car-select order, left to right: Red, Blue, Green, Flame, Yellow, Black
 RR.AI_STATS = { top: 259, acc: 203, grip: 14.0, turn: 2.55 };   // bots ~2% gentler than before, since the starting cars are slower than the old Red
 // Extra opponent-only livery [observed green/purple car]
@@ -390,6 +390,7 @@ function buildCut(T, cd) {
   const Hd = X.map((x, i) => { const j = Math.min(X.length - 1, i + 1), h = Math.max(0, j - 1); return Math.atan2(X[j] - X[h], -(Y[j] - Y[h])); });
   return { P, a, b, X, Y, S, H: Hd, L: acc, CW: Math.round(T.W * 0.62) };
 }
+function cutAt(k, s) { s = Math.max(0, Math.min(k.L, s)); let i = 0; while (i < k.S.length - 2 && k.S[i + 1] < s) i++; return [k.X[i], k.Y[i], k.H[i]]; }
 function strokeCuts(T, x, extra, style) {
   for (const k of T.cuts) {
     x.save(); x.lineJoin = 'miter'; x.lineCap = 'butt'; x.lineWidth = k.CW + extra; x.strokeStyle = style;
@@ -472,10 +473,25 @@ function renderTrack(T) {
     m.beginPath(); m.moveTo(path[0][0], path[0][1]); for (let i = 1; i < 4; i++) m.lineTo(path[i][0], path[i][1]); m.stroke(); m.restore();
   }
   strokePoly(v, cham, W, '#8c8c8c'); strokeCuts(T, v, 0, '#8c8c8c');
+  // shortcut arrows painted on the ground: one where the lane starts, one where it rejoins the track
+  const groundArrow = (cx, cy, h, a) => {
+    const d = [Math.sin(h), -Math.cos(h)], nx = -d[1], ny = d[0];
+    const P = (f, s) => [cx + d[0] * f + nx * s, cy + d[1] * f + ny * s];
+    const pts = [P(-a * 1.6, -a * 0.45), P(0, -a * 0.45), P(0, -a), P(a * 1.2, 0), P(0, a), P(0, a * 0.45), P(-a * 1.6, a * 0.45)];
+    v.save(); v.fillStyle = 'rgba(70,70,70,0.38)';   // grey, like the painted direction arrows (a little stronger)
+    v.beginPath(); pts.forEach(p => v.lineTo(p[0], p[1])); v.closePath(); v.fill(); v.restore();
+  };
+  for (const k of T.cuts) {
+    const a = Math.min(k.CW * 0.26, 18);
+    const s0 = Math.min(k.L * 0.35, T.W * 0.5 + a * 2.2), p0 = cutAt(k, s0);
+    groundArrow(p0[0], p0[1], p0[2], a);                                      // start: points into the shortcut
+    const j = (k.b + Math.round((a * 2.6) / T.step)) % T.N;
+    groundArrow(T.X[j], T.Y[j], T.H[j], a);                                    // end: points back along the track
+  }
   // shortcut mouths: dashed yellow lines so they're easy to spot
   for (const k of T.cuts) for (const end of [0, 1]) {
     const i0 = end ? k.X.length - 1 : 0, h = k.H[i0];
-    if (Math.abs(wrapAng(h - T.H[end ? k.b : k.a])) < 0.6) continue;   // lane carries straight on from a corner: no mouth to mark
+    if (Math.abs(wrapAng(h - T.H[end ? k.b : k.a])) < 1.0) continue;   // lane carries straight on from a corner: no mouth to mark
     const px = k.X[i0] + Math.sin(h) * (end ? -1 : 1) * (T.W / 2 + 6), py = k.Y[i0] - Math.cos(h) * (end ? -1 : 1) * (T.W / 2 + 6);
     v.save(); v.translate(px, py); v.rotate(h); v.fillStyle = '#f2c21a'; for (let s = -k.CW / 2 + 3; s < k.CW / 2 - 3; s += 12) v.fillRect(s, -2, 6, 4); v.restore();
   }
@@ -638,7 +654,7 @@ RR.createRace = function (opts) {
       car = makeCar(o.liv, RR.AI_STATS, scale, g); car.player = -1; car.ai = true;
       car.aiOffset = (rnd() - 0.5) * T.W * 0.45;
       car.aiLook = 0.8 + rnd() * 0.45; car.aiBrave = 0.85 + rnd() * 0.3; car.aiWeave = rnd() * 6.28;
-      car.aiCut = 0.35 + rnd() * 0.5;   // chance of taking a shortcut each time one comes up
+      car.aiCut = 0.15 + rnd() * 0.3;   // chance of taking a shortcut each time one comes up (playtest 11: less often)
     }
     car.gridSlot = k; car.id = k;
     car.sprite = RR.makeCarSprite(car.liv);
@@ -1095,6 +1111,7 @@ A.say = function (text) {
     if (pick) u.voice = pick;
     u.lang = pick ? pick.lang : 'en-US';
     u.rate = 1.05; u.volume = 1;
+    u.onend = u.onerror = () => setTimeout(A.musicWatch, 150);
     u.pitch = RR.MOBILE ? (female ? 1.0 : 0.6) : (female ? 0.65 : 0.35);
     const go = () => { try { synth.resume(); synth.speak(u); } catch (x) {} };
     if (synth.speaking || synth.pending) { synth.cancel(); setTimeout(go, 60); } else go();
@@ -1147,6 +1164,14 @@ A.stepSong = function (d) {              // buttons: wrap around (after the last
 A.setPaused = function (on) {
   if (!A.ctx || A.isPaused === on) return; A.isPaused = on;
   if (on) { A.ctx.suspend(); if (window.speechSynthesis) speechSynthesis.cancel(); } else A.ctx.resume();
+};
+// Phones: speaking a voice line takes the phone's audio focus and Android pauses the music (and never restarts it).
+// Watchdog: whenever music should be playing but has been paused by the system, start it again once speech is done.
+A.musicWatch = function () {
+  const el = A.musicEl;
+  if (!el || !A.musicMode || !el.paused || el.ended || document.hidden) return;
+  if (window.speechSynthesis && (speechSynthesis.speaking || speechSynthesis.pending)) return;
+  el.play().catch(() => {});
 };
 A.startMusic = function () { A.setMusic(A.musicMode || 'main'); };
 A.stopMusic = function () { A.setMusic(null); };
@@ -1882,6 +1907,7 @@ function tick(dt) {
   pollPadsForMenu();
   if (state.screen === 'title' && state.t > 3) go('menu');
   A.setPaused(state.screen === 'race' && state.paused);
+  if ((state.musicWatchT = (state.musicWatchT || 0) + dt) > 0.5) { state.musicWatchT = 0; A.musicWatch(); }
   if (state.screen === 'race' && state.race && !state.paused) {
     const race = state.race;
     state.acc += dt;
