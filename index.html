@@ -989,13 +989,14 @@ A.stopEngines = function () {
 };
 // Music (user-supplied songs in music/ next to index.html).
 // Main screen (title / main menu / options) = Waves, looping. Everywhere else = the game playlist,
-// played in order and looping; keys 1-6 jump straight to a song. A song keeps playing across
+// played in order and looping (Waves is also the last playlist song); keys 1-7 jump straight to a song. A song keeps playing across
 // race end / results / race select - it only changes when it finishes or a number key is pressed.
 A.MENU_SONG = { name: 'Waves', file: 'music/waves.mp3' };
 A.SONGS = [
   { name: 'Empty', file: 'music/empty.mp3' }, { name: 'Pocket 2', file: 'music/pocket_2.mp3' },
   { name: 'Wasted Time', file: 'music/wasted_time.mp3' }, { name: 'Rally', file: 'music/rally.mp3' },
   { name: 'Rally 3', file: 'music/rally3.mp3' }, { name: 'Stored 2', file: 'music/stored2.mp3' },
+  { name: 'Waves', file: 'music/waves.mp3' },
 ];
 A.musicVol = 0.8; A.musicMode = null; A.musicEl = null; A.songIdx = 0; A.onSong = null;
 A.applyMusicVol = function () { if (A.musicEl) A.musicEl.volume = Math.min(1, A.musicVol); };
@@ -1020,6 +1021,9 @@ A.setMusic = function (mode) {          // mode: 'main' | 'game' | null
 A.pickSong = function (i) {              // number keys
   if (i < 0 || i >= A.SONGS.length || !A.music || A.musicVol <= 0) return false;
   A.musicMode = 'game'; playSong(i); return true;
+};
+A.stepSong = function (d) {              // buttons: wrap around (after the last song comes song 1)
+  const n = A.SONGS.length; return A.pickSong(((A.songIdx + d) % n + n) % n);
 };
 // Pause: freeze every game sound (buzzer, engine, skid, effects) exactly where it is; resume continues in sync.
 A.setPaused = function (on) {
@@ -1127,17 +1131,17 @@ function pointerDown(x, y) {
   A.init(); A.setMusic(musicModeFor(state.screen));
   if (RR.MOBILE && state.screen === 'race' && !state.paused && !state.notice && !state.info) {
     if (inBox(x, y, TOUCH.pause)) { if (state.race.phase !== 'finished') { state.paused = true; state.focus = 0; A.play('back'); } return; }
-    if (inBox(x, y, TOUCH.song)) { A.pickSong(A.songIdx + 1); return; }
+    if (inBox(x, y, TOUCH.song)) { A.stepSong(1); return; }
   }
   const i = hitButton(x, y);
   if (state.notice) { state.notice = null; return; }
   if (state.info) { state.info = false; A.play('back'); return; }
-  if (i >= 0) { const bb = buttons()[i]; state.focus = i; if (bb.vol) { A.play('menu'); adjustVol(bb.vol, x < bb.x + bb.w / 2 ? -1 : +1); } else if (bb.song) { A.play('menu'); A.pickSong(A.songIdx + (x < bb.x + bb.w / 2 ? -1 : 1)); } else activate(bb); }
+  if (i >= 0) { const bb = buttons()[i]; state.focus = i; if (bb.vol) { A.play('menu'); adjustVol(bb.vol, x < bb.x + bb.w / 2 ? -1 : +1); } else if (bb.song) { A.play('menu'); A.stepSong(x < bb.x + bb.w / 2 ? -1 : 1); } else activate(bb); }
   else if (state.screen === 'title') go('menu');
 }
 canvas.addEventListener('mousedown', e => { const [x, y] = toVirtual(e); pointerDown(x, y); });
 // ---- phone: on-screen touch controls (left / right arrows bottom-left, accelerate bottom-right, as in RR) ----
-const TOUCH = RR.MOBILE ? { left: { x: 6, y: 392, w: 58, h: 82 }, right: { x: 68, y: 392, w: 58, h: 82 }, gas: { x: 182, y: 382, w: 82, h: 92 },
+const TOUCH = RR.MOBILE ? { left: { x: 0, y: 368, w: 76, h: 112 }, right: { x: 80, y: 368, w: 80, h: 112 }, gas: { x: 168, y: 362, w: 102, h: 118 },
   pause: { x: 4, y: 40, w: 26, h: 20 }, song: { x: 34, y: 40, w: 26, h: 20 } } : { left: { x: 6, y: 184, w: 62, h: 80 }, right: { x: 72, y: 184, w: 62, h: 80 }, gas: { x: 372, y: 170, w: 104, h: 96 },
   pause: { x: 4, y: 40, w: 26, h: 20 }, song: { x: 34, y: 40, w: 26, h: 20 } };
 const touchHeld = { left: false, right: false, gas: false };
@@ -1147,7 +1151,7 @@ function updateTouches(list) {
   for (const tch of list) {
     const [x, y] = clientToVirtual(tch.clientX, tch.clientY);
     // generous zones: whole lower-left quarter steers, whole lower-right area accelerates
-    if (RR.MOBILE) { if (y > 340 && x < 66) touchHeld.left = true; else if (y > 340 && x < 135) touchHeld.right = true; else if (y > 330 && x >= 160) touchHeld.gas = true; }
+    if (RR.MOBILE) { if (y > 340 && x < 78) touchHeld.left = true; else if (y > 340 && x < 162) touchHeld.right = true; else if (y > 330 && x >= 164) touchHeld.gas = true; }
     else if (y > 150 && x < 70) touchHeld.left = true; else if (y > 150 && x < 150) touchHeld.right = true; else if (y > 130 && x > 330) touchHeld.gas = true;
   }
 }
@@ -1172,12 +1176,24 @@ if (RR.MOBILE) {
 // ---------------- state ----------------
 const state = { screen: 'title', focus: 0, t: 0, notice: null, carSel: [save.lastCar, 4], selPlayer: 0, twoPlayer: false, track: 0, race: null, paused: false, debug: false, cams: [] };
 RR.state = state;
-function go(screen) { state.screen = screen; state.focus = screen === 'carselect' ? 7 : 0; state.t = 0; if (screen !== 'race') { A.stopEngines(); A.setMusic(musicModeFor(screen)); } }
+function go(screen) { state.screen = screen; state.pauseOpts = false; state.focus = screen === 'carselect' ? 7 : 0; state.t = 0; if (screen !== 'race') { A.stopEngines(); A.setMusic(musicModeFor(screen)); } }
 function notice(msg) { state.notice = msg; A.play('back'); }
 
 // ---------------- buttons per screen ----------------
 function B(x, y, w, h, label, act, opt) { return Object.assign({ x, y, w, h, label, act }, opt || {}); }
 const PLATFORM_MSG = 'Needs the original store / Google Play services.\nNot available in this offline recreation.';
+function optionsButtons(back) {
+  return [
+      B(150, 46, 180, 24, 'Sound Volume: ' + save.sfxVol, () => adjustVol('sfxVol', +1, true), { vol: 'sfxVol' }),
+      B(150, 76, 180, 24, 'Music Volume: ' + save.musicVol, () => adjustVol('musicVol', +1, true), { vol: 'musicVol' }),
+      B(150, 106, 180, 24, 'Voice: ' + ({ male: 'Male', female: 'Female', off: 'Off' })[save.voice || 'male'], () => { const order = ['male', 'female', 'off']; save.voice = order[(order.indexOf(save.voice || 'male') + 1) % 3]; A.voice = save.voice; persist(); A.say(save.voice === 'off' ? '' : 'Speed up'); }),
+      ...(RR.MOBILE ? [B(150, 136, 180, 22, 'Song: ' + A.SONGS[A.songIdx].name, () => A.stepSong(1), { song: 1 })] : []),
+      B(150, 160, 180, 22, RR.MOBILE ? 'Fullscreen' : 'PC: Fullscreen', () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }),
+      B(150, 185, 180, 22, RR.MOBILE ? 'Reset Progress' : 'PC: Reset Progress', () => { if (state.confirmReset) { const s = save; save = defSave(); save.sfxVol = s.sfxVol; save.musicVol = s.musicVol; save.voice = s.voice; persist(); state.confirmReset = false; notice('Progress reset.'); } else { state.confirmReset = true; notice('Press Reset Progress again to confirm.'); } }),
+      B(170, 210, 140, 22, 'Controls & Credits', () => { state.info = true; }, { blue: 1 }),
+      B(190, 240, 100, 24, 'Back', back),
+  ];
+}
 function buttons() { const l = buttonsLandscape(); return RR.MOBILE ? relayout(l) : l; }
 function buttonsLandscape() {
   if (state.notice || state.info) return [];
@@ -1193,16 +1209,7 @@ function buttonsLandscape() {
       B(8, 244, 60, 20, 'News', () => notice(PLATFORM_MSG)),
       B(412, 244, 60, 20, 'More', () => notice(PLATFORM_MSG)),
     ];
-    case 'options': return [
-      B(150, 46, 180, 24, 'Sound Volume: ' + save.sfxVol, () => adjustVol('sfxVol', +1, true), { vol: 'sfxVol' }),
-      B(150, 76, 180, 24, 'Music Volume: ' + save.musicVol, () => adjustVol('musicVol', +1, true), { vol: 'musicVol' }),
-      B(150, 106, 180, 24, 'Voice: ' + ({ male: 'Male', female: 'Female', off: 'Off' })[save.voice || 'male'], () => { const order = ['male', 'female', 'off']; save.voice = order[(order.indexOf(save.voice || 'male') + 1) % 3]; A.voice = save.voice; persist(); A.say(save.voice === 'off' ? '' : 'Speed up'); }),
-      ...(RR.MOBILE ? [B(150, 136, 180, 22, 'Song: ' + A.SONGS[A.songIdx].name, () => A.pickSong(A.songIdx + 1), { song: 1 })] : []),
-      B(150, 160, 180, 22, RR.MOBILE ? 'Fullscreen' : 'PC: Fullscreen', () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }),
-      B(150, 185, 180, 22, RR.MOBILE ? 'Reset Progress' : 'PC: Reset Progress', () => { if (state.confirmReset) { const s = save; save = defSave(); save.sfxVol = s.sfxVol; save.musicVol = s.musicVol; save.voice = s.voice; persist(); state.confirmReset = false; notice('Progress reset.'); } else { state.confirmReset = true; notice('Press Reset Progress again to confirm.'); } }),
-      B(170, 210, 140, 22, 'Controls & Credits', () => { state.info = true; }, { blue: 1 }),
-      B(190, 240, 100, 24, 'Back', () => go('menu')),
-    ];
+    case 'options': return optionsButtons(() => go('menu'));
     case 'carselect': {
       const out = RR.CARS.map((c, i) => B(88 + i * 52, 166, 44, 40, '', () => { selectCar(i); }, { team: i }));
       out.push(B(16, 226, 74, 34, 'Back', () => { if (state.selPlayer === 1) state.selPlayer = 0; else go('menu'); }));
@@ -1219,11 +1226,13 @@ function buttonsLandscape() {
       return out;
     }
     case 'race':
+      if (state.paused && state.pauseOpts) return optionsButtons(() => { state.pauseOpts = false; state.focus = 3; });
       if (state.paused) return [
-        B(180, 90, 120, 28, 'Resume', () => { state.paused = false; clearInput(); }),
-        B(180, 124, 120, 28, 'Restart', () => startRace(state.track)),
-        B(180, 158, 120, 28, 'Quit', () => { state.race = null; go('trackselect'); }),
-      ].concat(RR.MOBILE ? [B(150, 196, 180, 26, 'Song: ' + A.SONGS[A.songIdx].name, () => A.pickSong(A.songIdx + 1), { song: 1 })] : []);
+        B(180, 80, 120, 26, 'Resume', () => { state.paused = false; clearInput(); }),
+        B(180, 111, 120, 26, 'Restart', () => startRace(state.track)),
+        B(180, 142, 120, 26, 'Quit', () => { state.race = null; go('trackselect'); }),
+        B(180, 173, 120, 26, 'Options', () => { state.pauseOpts = true; state.focus = 0; }),
+      ].concat(RR.MOBILE ? [B(150, 206, 180, 24, 'Song: ' + A.SONGS[A.songIdx].name, () => A.stepSong(1), { song: 1 })] : []);
       return [];
     case 'results': {
       const list = [B(16, 226, 74, 34, 'Back', () => { state.race = null; go('trackselect'); }, { blue: 1 }),
@@ -1239,11 +1248,11 @@ const PORTRAIT = {
   menu: [[14, 236, 116, 40], [140, 236, 116, 40], [44, 290, 110, 36], [164, 290, 56, 36], [80, 380, 110, 40], [4, 4, 92, 20], [174, 4, 92, 20], [4, 454, 56, 22], [210, 454, 56, 22]],
   options: [[45, 56, 180, 28], [45, 90, 180, 28], [45, 124, 180, 28], [45, 158, 180, 28], [45, 206, 180, 26], [45, 238, 180, 26], [65, 280, 140, 28], [85, 430, 100, 32]],
   carselect: [[33, 262, 60, 44], [105, 262, 60, 44], [177, 262, 60, 44], [33, 322, 60, 44], [105, 322, 60, 44], [177, 322, 60, 44], [10, 424, 80, 40], [130, 418, 130, 48]],
-  race: [[65, 150, 140, 34], [65, 192, 140, 34], [65, 234, 140, 34], [35, 290, 200, 32]],
+  race: [[65, 146, 140, 34], [65, 188, 140, 34], [65, 230, 140, 34], [65, 272, 140, 34], [35, 326, 200, 32]],
   results: [[8, 424, 76, 40], [92, 424, 76, 40], [176, 418, 86, 48]],
 };
 function relayout(list) {
-  const sc = state.screen;
+  const sc = state.screen === 'race' && state.pauseOpts ? 'options' : state.screen;
   if (sc === 'trackselect') {
     list.forEach((b, i) => { if (i < 18) Object.assign(b, { x: 15 + (i % 3) * 84, y: 44 + ((i / 3) | 0) * 62, w: 78, h: 56 }); else Object.assign(b, { x: 85, y: 432, w: 100, h: 32 }); });
     return list;
@@ -1282,7 +1291,8 @@ function onPress(code) {
     if ((code === 'Escape' || code === 'KeyP') && state.race.phase !== 'finished') { state.paused = true; state.focus = 0; A.play('back'); }
     return;
   }
-  if (state.screen === 'race' && state.paused && (code === 'Escape' || code === 'KeyP')) { state.paused = false; clearInput(); return; }
+  if (state.screen === 'race' && state.paused && state.pauseOpts && (code === 'Escape' || code === 'Backspace')) { state.pauseOpts = false; state.focus = 3; A.play('back'); return; }
+  if (state.screen === 'race' && state.paused && (code === 'Escape' || code === 'KeyP')) { state.paused = false; state.pauseOpts = false; clearInput(); return; }
   const b = buttons();
   const fb = b[state.focus];
   if (fb && fb.vol && (code === 'ArrowLeft' || code === 'KeyA' || code === 'ArrowRight' || code === 'KeyD')) { adjustVol(fb.vol, (code === 'ArrowLeft' || code === 'KeyA') ? -1 : +1); return; }
@@ -1311,7 +1321,7 @@ function onPress(code) {
 
 // ---------------- race management ----------------
 function startRace(ti, seed) {
-  state.track = ti; state.paused = false; clearInput();
+  state.track = ti; state.paused = false; state.pauseOpts = false; clearInput();
   const players = state.twoPlayer ? [{ carId: state.carSel[0] }, { carId: state.carSel[1] }] : [{ carId: state.carSel[0] }];
   state.race = RR.createRace({ trackIndex: ti, players, twoPlayer: state.twoPlayer, raceSeed: seed });
   state.cams = state.race.cars.filter(c => c.player >= 0).sort((a, b) => a.player - b.player).map(c => ({ car: c, x: c.x, y: c.y }));
@@ -1554,9 +1564,9 @@ function hintText(s, y) {
   ctx.font = 'bold 9px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillText(s, VW / 2, y); ctx.restore();
 }
 function drawSongToast() {
-  const st = state.songToast; if (!st || st.t <= 0) return;
+  const st = state.songToast; if (!st || st.t <= 0 || state.pauseOpts) return;
   ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.globalAlpha = Math.min(1, st.t);
-  ctx.font = (RR.MOBILE && state.screen !== 'race' ? 'bold 8px' : 'bold 10px') + ' "Trebuchet MS","Segoe UI",sans-serif'; const txt = RR.MOBILE ? st.text : st.plain ? st.text + '   ( - / + music,  [ / ] sound )' : st.text + '   (keys 1-6 change song)', w = ctx.measureText(txt).width + 16;
+  ctx.font = (RR.MOBILE && state.screen !== 'race' ? 'bold 8px' : 'bold 10px') + ' "Trebuchet MS","Segoe UI",sans-serif'; const txt = RR.MOBILE ? st.text : st.plain ? st.text + '   ( - / + music,  [ / ] sound )' : st.text + '   (keys 1-7 change song)', w = ctx.measureText(txt).width + 16;
   const y = state.screen === 'race' ? (RR.MOBILE ? 72 : 36) : (RR.MOBILE ? VH - 6 : VH - 30);
   const bh = RR.MOBILE && state.screen !== 'race' ? 11 : 18; ctx.fillStyle = 'rgba(0,0,0,0.6)'; roundRect(ctx, VW / 2 - w / 2, y - bh / 2, w, bh, 5); ctx.fill();
   ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, VW / 2, y + 1); ctx.restore();
@@ -1665,10 +1675,10 @@ function drawTouchControls() {
   const lcx = L.x + L.w / 2, lcy = L.y + L.h / 2, rcx = R.x + R.w / 2, rcy = R.y + R.h / 2, gcx = G.x + G.w / 2, gcy = G.y + G.h / 2;
   // all three arrows share one look (as in the original): light grey translucent fill, darker grey rim
   const fill = on => on ? 'rgba(240,240,240,0.72)' : 'rgba(210,210,210,0.5)', rim = 'rgba(80,80,80,0.5)';
-  const aw = L.w * 0.40, ah = L.h * 0.30;
+  const aw = RR.MOBILE ? 27 : L.w * 0.40, ah = RR.MOBILE ? 30 : L.h * 0.30;
   tri([[lcx - aw, lcy], [lcx + aw, lcy - ah], [lcx + aw, lcy + ah]], fill(touchHeld.left), rim, 4);
   tri([[rcx + aw, rcy], [rcx - aw, rcy - ah], [rcx - aw, rcy + ah]], fill(touchHeld.right), rim, 4);
-  const gw = G.w * 0.36, gh = G.h * 0.30;
+  const gw = RR.MOBILE ? 32 : G.w * 0.36, gh = RR.MOBILE ? 30 : G.h * 0.30;
   tri([[gcx, gcy - gh], [gcx + gw, gcy + gh], [gcx - gw, gcy + gh]], fill(touchHeld.gas), rim, 4);
   for (const [b, label] of [[TOUCH.pause, 'II'], [TOUCH.song, '\u266A']]) {
     ctx.fillStyle = 'rgba(40,40,40,0.55)'; roundRect(ctx, b.x, b.y, b.w, b.h, 5); ctx.fill();
@@ -1700,7 +1710,7 @@ function drawInfo() {
   else y = sec('Controls', ['1 Player: Arrows or WASD steer, Up / W / Z / X / Space accelerate',
                        '2 Player: P1 A / D steer + W accelerate, P2 Left / Right + Up accelerate',
                        'Esc or P pause   |   Gamepad: stick / D-pad steer, A or RT accelerate'], y);
-  if (!RR.MOBILE) y = sec('Hotkeys', ['1-6 change song   |   - / + music volume   |   [ / ] sound volume   |   F3 telemetry'], y);
+  if (!RR.MOBILE) y = sec('Hotkeys', ['1-7 change song   |   - / + music volume   |   [ / ] sound volume   |   F3 telemetry'], y);
   y = sec('Music (supplied by Anthony)', ['Waves (main screen)   |   Empty, Pocket 2, Wasted Time, Rally, Rally 3, Stored 2'], y);
   y = sec('Sounds', ['Engine loop by qubodup, tyre squeal by audible-edge (CC-BY 3.0)', 'Pickup, nitro, cone and finish sounds by Kenney.nl (CC0)   |   Buzzer, clicks, collision by Anthony'], y);
   ctx.fillStyle = '#a9c2ff'; ctx.font = '9px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillText('(click or press Enter / Esc to close)', VW / 2, VH - 14);
@@ -1771,7 +1781,8 @@ function render() {
       else { drawView(race, state.cams[0], 0, 0, VW / 2 - 1, VH); drawView(race, state.cams[1], VW / 2 + 1, 0, VW / 2 - 1, VH);
         ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = '#111'; ctx.fillRect(VW / 2 - 1, 0, 2, VH); }
       if (RR.MOBILE && !state.paused) drawTouchControls();
-      if (state.paused) { ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, VW, VH); title('Paused', RR.MOBILE ? 116 : 66); drawButtons(); if (!RR.MOBILE) hintText('1-6 change song   |   - / + music volume   |   [ / ] sound volume', 205); else hintText('Tap the left / right side of Song to change it', 336); }
+      if (state.paused && state.pauseOpts) { ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(3,7,26,0.88)'; ctx.fillRect(0, 0, VW, VH); title('Options', 24); drawButtons(); }
+      else if (state.paused) { ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, VW, VH); title('Paused', RR.MOBILE ? 112 : 56); drawButtons(); if (!RR.MOBILE) hintText('1-7 change song   |   - / + music volume   |   [ / ] sound volume', 205); else hintText('Tap the left / right side of Song to change it', 372); }
       break;
     }
     case 'results': drawResults(); break;
