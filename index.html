@@ -88,6 +88,8 @@ RR.CARS = [
   { id: 5, name: 'Team Red',    B: '#d81c1c', b: '#8a0e0e', L: '#ff6a5a', A: '#e01818', a: '#8a0e0e', ts: 2, ac: 2, ti: 1, unlock: 0 },
 ];
 RR.CARS.forEach(c => { const L = RR.STAT_LV; c.top = L.top[c.ts - 1]; c.acc = L.acc[c.ac - 1]; c.grip = L.grip[c.ti - 1]; c.turn = L.turn[c.ti - 1]; });
+RR.AI_CAR_BOOST = 0.022;   // bot pace +2.2% per star your car has above the starting cars (5 stars)
+RR.CAR_ORDER = [5, 0, 1, 4, 2, 3];   // car-select order, left to right: Red, Blue, Green, Flame, Yellow, Black
 RR.AI_STATS = { top: 259, acc: 203, grip: 14.0, turn: 2.55 };   // bots ~2% gentler than before, since the starting cars are slower than the old Red
 // Extra opponent-only livery [observed green/purple car]
 RR.AI_LIVERIES = [
@@ -106,25 +108,26 @@ RR.AI_LIVERIES = [
 // desktop screenshot; track 16 uses the twin-fenced vertical start
 // straight from the "RACE 16" screenshot.
 // ----------------------------------------------------------------
+// cuts: shortcut lanes (grid coords, from one point of the track to a later one; playtest 10)
 RR.TRACKS = [
   { name: 'RACE 1',  w: 124, trees: 10, umb: 6, pts: [[3,9],[3,2],[16,2],[16,9]] },
-  { name: 'RACE 2',  w: 122, trees: 10, umb: 6, pts: [[3,10],[16,10],[16,2],[10,2],[10,6],[3,6]] },
+  { name: 'RACE 2',  w: 122, trees: 10, umb: 6, pts: [[3,10],[16,10],[16,2],[10,2],[10,6],[3,6]], cuts: [[[16,6],[10,6]]] },
   { name: 'RACE 3',  w: 120, trees: 12, umb: 6, pts: [[4,11],[16,11],[19,8],[19,3],[11,3],[8,6],[4,6]] },
-  { name: 'RACE 4',  w: 118, trees: 12, umb: 7, pts: [[3,12],[19,12],[19,2],[15,2],[15,8],[11,8],[11,2],[3,2]] },
+  { name: 'RACE 4',  w: 118, trees: 12, umb: 7, pts: [[3,12],[19,12],[19,2],[15,2],[15,8],[11,8],[11,2],[3,2]], cuts: [[[15,2],[11,2]]] },
   { name: 'RACE 5',  w: 116, trees: 12, umb: 7, pts: [[3,12],[12,12],[15,9],[19,9],[19,3],[14,3],[11,6],[7,6],[7,3],[3,3]] },
-  { name: 'RACE 6',  w: 114, trees: 14, umb: 7, pts: [[3,13],[20,13],[20,9],[14,9],[14,6],[20,6],[20,2],[3,2],[3,7],[8,7],[8,10],[3,10]] },
-  { name: 'RACE 7',  w: 112, trees: 14, umb: 8, pts: [[4,14],[18,14],[21,11],[21,3],[17,3],[17,9],[13,9],[13,3],[9,3],[9,9],[4,9]] },
+  { name: 'RACE 6',  w: 114, trees: 14, umb: 7, pts: [[3,13],[20,13],[20,9],[14,9],[14,6],[20,6],[20,2],[3,2],[3,7],[8,7],[8,10],[3,10]], cuts: [[[20,9],[20,6]]] },
+  { name: 'RACE 7',  w: 112, trees: 14, umb: 8, pts: [[4,14],[18,14],[21,11],[21,3],[17,3],[17,9],[13,9],[13,3],[9,3],[9,9],[4,9]], cuts: [[[17,3],[13,3]]] },
   { name: 'RACE 8',  w: 110, trees: 14, umb: 8, pts: [[3,13],[11,13],[11,9],[15,9],[15,13],[21,13],[21,2],[16,2],[13,5],[9,5],[6,2],[3,2]] },
   { name: 'RACE 9',  w: 108, trees: 16, umb: 8, pts: [[3,14],[22,14],[22,2],[3,2],[3,6],[17,6],[17,10],[3,10]] },
   { name: 'RACE 10', w: 106, trees: 16, umb: 8, pts: [[4,14],[12,14],[15,11],[18,14],[22,14],[22,2],[18,2],[15,5],[12,2],[4,2]] },
   { name: 'RACE 11', w: 104, trees: 16, umb: 9, pts: [[3,15],[23,15],[23,9],[19,9],[19,5],[23,5],[23,2],[8,2],[8,11],[3,11]] },
   { name: 'RACE 12', w: 102, trees: 18, umb: 9, pts: [[3,15],[14,15],[14,11],[18,11],[18,15],[23,15],[23,6],[19,2],[3,2]] },
-  { name: 'RACE 13', w: 100, trees: 18, umb: 9, pts: [[3,15],[9,15],[9,10],[13,10],[13,15],[23,15],[23,10],[18,10],[18,6],[23,6],[23,2],[3,2]] },
+  { name: 'RACE 13', w: 100, trees: 18, umb: 9, pts: [[3,15],[9,15],[9,10],[13,10],[13,15],[23,15],[23,10],[18,10],[18,6],[23,6],[23,2],[3,2]], cuts: [[[9,15],[13,15]]] },
   { name: 'RACE 14', w: 98,  trees: 18, umb: 9, pts: [[4,15],[16,15],[22,9],[22,4],[19,1],[12,1],[8,5],[13,10],[4,10]] },
   { name: 'RACE 15', w: 96,  trees: 20, umb: 10, pts: [[3,16],[24,16],[24,12],[8,12],[8,9],[24,9],[24,2],[3,2]] },
-  { name: 'RACE 16', w: 96,  trees: 22, umb: 10, pts: [[4,16],[4,2],[10,2],[10,12],[14,12],[14,2],[24,2],[24,16]] },
+  { name: 'RACE 16', w: 96,  trees: 22, umb: 10, pts: [[4,16],[4,2],[10,2],[10,12],[14,12],[14,2],[24,2],[24,16]], cuts: [[[10,7],[14,7]]] },
   { name: 'RACE 17', w: 94,  trees: 22, umb: 10, pts: [[3,16],[12,16],[15,13],[19,13],[19,16],[25,16],[25,8],[21,4],[21,1],[15,1],[15,8],[10,8],[10,4],[3,4]] },
-  { name: 'RACE 18', w: 92,  trees: 24, umb: 11, pts: [[3,17],[26,17],[26,12],[20,12],[20,8],[26,8],[26,2],[15,2],[15,13],[10,13],[10,2],[3,2]] },
+  { name: 'RACE 18', w: 92,  trees: 24, umb: 11, pts: [[3,17],[26,17],[26,12],[20,12],[20,8],[26,8],[26,2],[15,2],[15,13],[10,13],[10,2],[3,2]], cuts: [[[26,12],[26,8]]] },
 ];
 RR.FENCE_OFFSET = 22;     // px from road edge to fence [measured approx from desktop screenshot]
 
@@ -353,10 +356,47 @@ RR.buildTrack = function (def, index) {
   for (let i = 0; i < N; i++) { const j = (i + 3) % N; RH[i] = Math.atan2(RX[j] - RX[i], -(RY[j] - RY[i])); }
 
   const T = { def, index, W, OFF, width, height, pts, cham, corners, X, Y, S, H, N, L, RX, RY, RH, step };
+  T.cuts = (def.cuts || []).map(cd => buildCut(T, cd));
   renderTrack(T);
   return T;
 };
 
+// ---------- shortcuts: a narrow fenced lane joining two points of the track ----------
+const wrapAng = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+function nearestIdx(T, x, y) {
+  let best = 0, bd = 1e18;
+  for (let i = 0; i < T.N; i++) { const d = (T.X[i] - x) ** 2 + (T.Y[i] - y) ** 2; if (d < bd) { bd = d; best = i; } }
+  return best;
+}
+function buildCut(T, cd) {
+  const P = cd.map(p => [(p[0] + MARGIN - 1) * U, (p[1] + MARGIN - 1) * U]);
+  // a lane that starts/ends at a chamfered corner is extended along its own direction until it meets the road's centreline
+  const ext = (p, q) => {
+    const d = norm(p[0] - q[0], p[1] - q[1]);
+    for (let s = 0; s <= T.W * 1.9; s += 2) { const x = p[0] + d[0] * s, y = p[1] + d[1] * s, i = nearestIdx(T, x, y); if (Math.hypot(T.X[i] - x, T.Y[i] - y) < 3) return [x, y]; }
+    return p;
+  };
+  P[0] = ext(P[0], P[1]); P[P.length - 1] = ext(P[P.length - 1], P[P.length - 2]);
+  let a = nearestIdx(T, P[0][0], P[0][1]), b = nearestIdx(T, P[P.length - 1][0], P[P.length - 1][1]);
+  if (a > b) { P.reverse(); const t = a; a = b; b = t; }
+  const X = [], Y = [], S = [];
+  let acc = 0;
+  for (let i = 0; i < P.length - 1; i++) {
+    const p = P[i], q = P[i + 1], len = Math.hypot(q[0] - p[0], q[1] - p[1]), k = Math.max(1, Math.round(len / T.step));
+    for (let j = 0; j < k; j++) { X.push(p[0] + (q[0] - p[0]) * j / k); Y.push(p[1] + (q[1] - p[1]) * j / k); S.push(acc + len * j / k); }
+    acc += len;
+  }
+  X.push(P[P.length - 1][0]); Y.push(P[P.length - 1][1]); S.push(acc);
+  const Hd = X.map((x, i) => { const j = Math.min(X.length - 1, i + 1), h = Math.max(0, j - 1); return Math.atan2(X[j] - X[h], -(Y[j] - Y[h])); });
+  return { P, a, b, X, Y, S, H: Hd, L: acc, CW: Math.round(T.W * 0.62) };
+}
+function strokeCuts(T, x, extra, style) {
+  for (const k of T.cuts) {
+    x.save(); x.lineJoin = 'miter'; x.lineCap = 'butt'; x.lineWidth = k.CW + extra; x.strokeStyle = style;
+    x.beginPath(); x.moveTo(k.P[0][0], k.P[0][1]); for (let i = 1; i < k.P.length; i++) x.lineTo(k.P[i][0], k.P[i][1]); x.stroke(); x.restore();
+  }
+}
+const CUT_BAND = 28;   // grass between a shortcut's road edge and its fences (both sides)
 function strokePoly(x, poly, w, style) {
   x.lineJoin = 'miter'; x.miterLimit = 3; x.lineWidth = w; x.strokeStyle = style;
   x.beginPath(); x.moveTo(poly[0][0], poly[0][1]); for (let i = 1; i < poly.length; i++) x.lineTo(poly[i][0], poly[i][1]); x.closePath(); x.stroke();
@@ -393,10 +433,10 @@ function renderTrack(T) {
     }
   }
   // fence pipe ring then drivable grass band
-  strokePoly(v, cham, DW + 6, '#d8d8d8');
-  strokePoly(v, cham, DW + 2, '#f2f2f2');
-  strokePoly(v, cham, DW, gIn);
-  strokePoly(m, cham, DW, 'rgb(0,255,0)');
+  strokePoly(v, cham, DW + 6, '#d8d8d8'); strokeCuts(T, v, CUT_BAND + 6, '#d8d8d8');
+  strokePoly(v, cham, DW + 2, '#f2f2f2'); strokeCuts(T, v, CUT_BAND + 2, '#f2f2f2');
+  strokePoly(v, cham, DW, gIn); strokeCuts(T, v, CUT_BAND, gIn);
+  strokePoly(m, cham, DW, 'rgb(0,255,0)'); strokeCuts(T, m, CUT_BAND, 'rgb(0,255,0)');
 
   // sand traps at outside of sharp corners, clipped to drivable band [inferred placement]
   const sand = RR.mk(width, height), sx = sand.getContext('2d');
@@ -418,8 +458,8 @@ function renderTrack(T) {
   }
 
   // road edge line, kerbs, road [observed]
-  strokePoly(v, cham, W + 3, '#f0f0f0');
-  strokePoly(m, cham, W + 3, 'rgb(0,0,255)');
+  strokePoly(v, cham, W + 3, '#f0f0f0'); strokeCuts(T, v, 3, '#f0f0f0');
+  strokePoly(m, cham, W + 3, 'rgb(0,0,255)'); strokeCuts(T, m, 3, 'rgb(0,0,255)');
   for (const c of corners) {
     if (!c.sharp && rnd() < 0.5) continue;
     const ext = c.sharp ? W * 0.45 : W * 0.3;
@@ -431,7 +471,14 @@ function renderTrack(T) {
     m.save(); m.lineJoin = 'miter'; m.lineWidth = W + 12; m.strokeStyle = 'rgb(0,0,255)';
     m.beginPath(); m.moveTo(path[0][0], path[0][1]); for (let i = 1; i < 4; i++) m.lineTo(path[i][0], path[i][1]); m.stroke(); m.restore();
   }
-  strokePoly(v, cham, W, '#8c8c8c');
+  strokePoly(v, cham, W, '#8c8c8c'); strokeCuts(T, v, 0, '#8c8c8c');
+  // shortcut mouths: dashed yellow lines so they're easy to spot
+  for (const k of T.cuts) for (const end of [0, 1]) {
+    const i0 = end ? k.X.length - 1 : 0, h = k.H[i0];
+    if (Math.abs(wrapAng(h - T.H[end ? k.b : k.a])) < 0.6) continue;   // lane carries straight on from a corner: no mouth to mark
+    const px = k.X[i0] + Math.sin(h) * (end ? -1 : 1) * (T.W / 2 + 6), py = k.Y[i0] - Math.cos(h) * (end ? -1 : 1) * (T.W / 2 + 6);
+    v.save(); v.translate(px, py); v.rotate(h); v.fillStyle = '#f2c21a'; for (let s = -k.CW / 2 + 3; s < k.CW / 2 - 3; s += 12) v.fillRect(s, -2, 6, 4); v.restore();
+  }
 
   // painted direction arrows on long straights [observed dark arrow]
   v.fillStyle = 'rgba(70,70,70,0.22)';
@@ -571,7 +618,9 @@ RR.createRace = function (opts) {
     .concat(RR.AI_LIVERIES.map(l => ({ liv: l, stats: RR.AI_STATS })));
   // shuffle opponents [observed: "power ups and other cars are slightly random"]
   for (let i = aiPool.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [aiPool[i], aiPool[j]] = [aiPool[j], aiPool[i]]; }
-  const aiScale = RR.aiScaleForRace(opts.trackIndex);
+  // bots push harder when you bring a better car (playtest 10: good cars made races too easy)
+  const bestCar = Math.max(...opts.players.map(p => { const c = RR.CARS[p.carId]; return c.ts + c.ac + c.ti; }));
+  const aiScale = RR.aiScaleForRace(opts.trackIndex) * (1 + RR.AI_CAR_BOOST * Math.max(0, bestCar - 5));
   const slots = [];
   if (race.twoPlayer) slots.push(RR.PLAYER_GRID_SLOT - 1, RR.PLAYER_GRID_SLOT); else slots.push(RR.PLAYER_GRID_SLOT);
   let ai = 0;
@@ -589,6 +638,7 @@ RR.createRace = function (opts) {
       car = makeCar(o.liv, RR.AI_STATS, scale, g); car.player = -1; car.ai = true;
       car.aiOffset = (rnd() - 0.5) * T.W * 0.45;
       car.aiLook = 0.8 + rnd() * 0.45; car.aiBrave = 0.85 + rnd() * 0.3; car.aiWeave = rnd() * 6.28;
+      car.aiCut = 0.35 + rnd() * 0.5;   // chance of taking a shortcut each time one comes up
     }
     car.gridSlot = k; car.id = k;
     car.sprite = RR.makeCarSprite(car.liv);
@@ -619,6 +669,14 @@ function updateProgress(T, c) {
     const i = (c.idx + k + T.N) % T.N; const d = (T.X[i] - c.x) ** 2 + (T.Y[i] - c.y) ** 2;
     if (d < bd) { bd = d; best = i; }
   }
+  // on a shortcut lane: progress moves smoothly from the lane's start point to its end point
+  if (T.cuts.length && bd > (T.W / 2 + 8) ** 2) {
+    for (const k of T.cuts) {
+      let j = 0, dj = 1e12;
+      for (let i = 0; i < k.X.length; i++) { const d = (k.X[i] - c.x) ** 2 + (k.Y[i] - c.y) ** 2; if (d < dj) { dj = d; j = i; } }
+      if (dj < bd && dj < (k.CW / 2 + 30) ** 2) { best = Math.round(k.a + (k.b - k.a) * k.S[j] / k.L); c.onCut = k; break; }
+    }
+  } else c.onCut = null;
   if (c.idx > T.N * 0.8 && best < T.N * 0.2) c.lap++;
   else if (c.idx < T.N * 0.2 && best > T.N * 0.8) c.lap--;  // crossed backwards
   c.idx = best; c.s = T.S[best]; c.progress = c.lap * T.L + c.s;
@@ -799,9 +857,47 @@ function respawnSpot(race) {
 }
 
 // ------------- opponent driver -------------
+function cutPoint(k, s) { // point + heading at distance s along a shortcut lane
+  s = Math.max(0, Math.min(k.L, s)); let i = 0; while (i < k.S.length - 2 && k.S[i + 1] < s) i++;
+  const f = k.S[i + 1] > k.S[i] ? (s - k.S[i]) / (k.S[i + 1] - k.S[i]) : 0;
+  return [k.X[i] + (k.X[i + 1] - k.X[i]) * f, k.Y[i] + (k.Y[i + 1] - k.Y[i]) * f, k.H[i]];
+}
+function aiCutTarget(race, c, speed, Ld) {   // returns [tx, ty, bend] while a bot is taking a shortcut, else null
+  const T = race.T;
+  if (c.cutK == null) {
+    for (let ki = 0; ki < T.cuts.length; ki++) {
+      const k = T.cuts[ki]; let di = k.a - c.idx; if (di < 0) di += T.N;
+      const key = ki + ':' + c.lap;
+      if (di > 0 && di * T.step < 120 + speed * 0.9 && c.cutSeen !== key) { c.cutSeen = key; if (race.rnd() < (c.aiCut || 0)) c.cutK = ki; }
+    }
+    if (c.cutK == null) return null;
+  }
+  const k = T.cuts[c.cutK];
+  let j = 0, dj = 1e12;
+  for (let i = 0; i < k.X.length; i++) { const d = (k.X[i] - c.x) ** 2 + (k.Y[i] - c.y) ** 2; if (d < dj) { dj = d; j = i; } }
+  const sNow = k.S[j], dStart = Math.hypot(k.X[0] - c.x, k.Y[0] - c.y);
+  const passed = c.onCut !== k && c.idx > k.b - 2 && c.idx < k.b + 200;
+  const missed = c.onCut !== k && (c.idx > k.a + 30) && j < 3;
+  if (passed || missed || sNow >= k.L - 6) { c.cutK = null; return null; }
+  const approaching = c.onCut !== k && j === 0;
+  const sT = approaching ? Math.max(0, Ld - dStart) : sNow + Ld;
+  let tx, ty;
+  if (sT <= k.L) { const p = cutPoint(k, sT); tx = p[0]; ty = p[1]; }
+  else { const ti = (k.b + Math.round((sT - k.L) / T.step)) % T.N; tx = T.RX[ti]; ty = T.RY[ti]; }
+  if (approaching && dStart > Ld) return null; // keep to the racing line until the lane mouth is within reach
+  // bend ahead: turn into the lane, along it, and back onto the track
+  const span = 50 + speed * 0.7, h0 = approaching ? T.RH[c.idx] : cutPoint(k, sNow)[2];
+  let bend = 0;
+  for (let s = (approaching ? 0 : sNow); s <= (approaching ? 0 : sNow) + span; s += 8) {
+    const h = s <= k.L ? cutPoint(k, s)[2] : T.RH[(k.b + Math.round((s - k.L) / T.step)) % T.N];
+    bend = Math.max(bend, Math.abs(wrapA(h - h0)));
+  }
+  return [tx, ty, bend];
+}
 function aiDrive(race, c, dt) {
   const T = race.T, st = RR.carStats(c);
   const speed = Math.hypot(c.vx, c.vy);
+  const cutT = T.cuts.length ? aiCutTarget(race, c, speed, 26 + speed * 0.32 * (c.aiLook || 1)) : null;
   const look = Math.round((26 + speed * 0.32 * (c.aiLook || 1)) / T.step);
   const ti = (c.idx + look) % T.N;
   const h = T.RH[ti];
@@ -816,9 +912,10 @@ function aiDrive(race, c, dt) {
   }
   off = clamp(off, -T.W * 0.38, T.W * 0.38);
   let tx = T.RX[ti] + Math.cos(h) * off, ty = T.RY[ti] + Math.sin(h) * off;
+  if (cutT) { tx = cutT[0]; ty = cutT[1]; }
   // detour to nearby pickup ahead [observed: opponents collect pickups]
   for (const p of race.pickups) {
-    if (!p.active || race.time < (c.pickupWait || 0)) continue;
+    if (cutT || !p.active || race.time < (c.pickupWait || 0)) continue;
     let di = p.idx - c.idx; if (di < 0) di += T.N;
     if (di > 4 && di < 28 && Math.hypot(p.x - c.x, p.y - c.y) < 110) { tx = p.x; ty = p.y; break; }
   }
@@ -829,6 +926,7 @@ function aiDrive(race, c, dt) {
   const span = Math.round((50 + speed * 0.7) / T.step);
   let bend = 0;
   for (let k = 0; k <= span; k += 4) bend = Math.max(bend, Math.abs(wrapA(T.RH[(c.idx + k) % T.N] - T.RH[c.idx])));
+  if (cutT) bend = Math.max(cutT[2], c.onCut ? 0 : bend * 0.5);
   const vmax = st.top - clamp(bend / 1.7, 0, 1) * (st.top - 95) * (11 / Math.max(8, st.grip)) / (c.aiBrave || 1);
   c.throttle = speed < vmax || speed < 35;
   if (Math.abs(diff) > 1.1 && speed > 45) c.throttle = false;
@@ -972,19 +1070,34 @@ A.updateEngine = function (i, speed, throttle, slip, top) {
   e.sg.gain.setTargetAtTime(sv, t, 0.05);
 };
 // Announcer: Windows/browser text-to-speech, tuned to sound robotic (no original voice files available).
+// Announcer (text-to-speech). Phones (Android Chrome / the installed app) are fussy:
+//  - speech must first be started from a tap, so the first touch "unlocks" it with a silent line;
+//  - the voice list loads late, so it is re-read when it changes;
+//  - cancel() straight before speak() can swallow the new line, so we only cancel when busy and speak a moment later;
+//  - very low pitch values are refused by some phone voices, so phones use a milder pitch.
+A.voices = [];
+A.loadVoices = function () { try { A.voices = window.speechSynthesis ? speechSynthesis.getVoices() : []; } catch (x) {} };
+if (window.speechSynthesis) { A.loadVoices(); try { speechSynthesis.addEventListener('voiceschanged', A.loadVoices); } catch (x) { speechSynthesis.onvoiceschanged = A.loadVoices; } }
+A.unlockSpeech = function () {
+  if (A.speechUnlocked || !window.speechSynthesis) return; A.speechUnlocked = true;
+  try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; u.lang = 'en-US'; speechSynthesis.speak(u); A.loadVoices(); } catch (x) {}
+};
+['touchend', 'pointerup', 'keydown'].forEach(ev => window.addEventListener(ev, () => A.unlockSpeech(), { passive: true }));
 A.say = function (text) {
-  if (!A.sfx || !window.speechSynthesis || A.voice === 'off') return;
+  if (!text || !A.sfx || !window.speechSynthesis || A.voice === 'off') return;
   try {
     const synth = window.speechSynthesis, u = new SpeechSynthesisUtterance(text);
-    const vs = synth.getVoices();
-    if (A.voice === 'off') return;
-    const en = v => /^en/i.test(v.lang);
+    if (!A.voices.length) A.loadVoices();
+    const vs = A.voices, en = v => /^en/i.test(v.lang);
     const female = A.voice === 'female';
-    const re = female ? /Zira|Hazel|Susan|Aria|Jenny|Linda|Catherine|Heera|Samantha|Female|Woman/i : /David|Mark|Guy|George|Male|Daniel|Fred/i;
-    const pick = vs.find(v => re.test(v.name) && en(v)) || vs.find(en);
+    const re = female ? /Zira|Hazel|Susan|Aria|Jenny|Linda|Catherine|Heera|Samantha|Female|Woman|en-us-x-(sfg|tpc|iob|iog)/i : /David|Mark|Guy|George|Male|Daniel|Fred|en-us-x-(iom|tpd|iol|tpf)/i;
+    const pick = vs.find(v => re.test(v.name) && en(v)) || vs.find(v => /en[-_]US/i.test(v.lang)) || vs.find(en);
     if (pick) u.voice = pick;
-    u.rate = 1.05; u.pitch = female ? 0.65 : 0.35; u.volume = 1;
-    synth.cancel(); synth.speak(u);
+    u.lang = pick ? pick.lang : 'en-US';
+    u.rate = 1.05; u.volume = 1;
+    u.pitch = RR.MOBILE ? (female ? 1.0 : 0.6) : (female ? 0.65 : 0.35);
+    const go = () => { try { synth.resume(); synth.speak(u); } catch (x) {} };
+    if (synth.speaking || synth.pending) { synth.cancel(); setTimeout(go, 60); } else go();
   } catch (x) {}
 };
 A.stopEngines = function () {
@@ -1218,7 +1331,7 @@ function buttonsLandscape() {
     ];
     case 'options': return optionsButtons(() => go('menu'));
     case 'carselect': {
-      const out = RR.CARS.map((c, i) => B(88 + i * 52, 166, 44, 40, '', () => { selectCar(i); }, { team: i }));
+      const out = RR.CAR_ORDER.map((id, i) => B(88 + i * 52, 166, 44, 40, '', () => { selectCar(id); }, { team: id }));
       out.push(B(16, 226, 74, 34, 'Back', () => { if (state.selPlayer === 1) state.selPlayer = 0; else go('menu'); }));
       out.push(B(320, 222, 144, 40, 'Play', () => pickCar(), { big: 1 }));
       return out;
@@ -1277,7 +1390,7 @@ function adjustVol(key, d, wrap) {
 function hitButton(x, y) { const b = buttons(); for (let i = 0; i < b.length; i++) if (x >= b[i].x && x <= b[i].x + b[i].w && y >= b[i].y && y <= b[i].y + b[i].h) return i; return -1; }
 function activate(b) { if (!b) return; A.play('menu'); b.act(); }
 function selectCar(i) { const p = state.selPlayer; if (state.twoPlayer && p === 1 && i === state.carSel[0]) return; state.carSel[p] = i; }
-function cycleCar(d) { const p = state.selPlayer; state.carSel[p] = (state.carSel[p] + d + 6) % 6; if (state.twoPlayer && state.carSel[0] === state.carSel[1] && p === 1) state.carSel[1] = (state.carSel[1] + d + 6) % 6; }
+function cycleCar(d) { const p = state.selPlayer, O = RR.CAR_ORDER, nx = id => O[(O.indexOf(id) + d + 6) % 6]; state.carSel[p] = nx(state.carSel[p]); if (state.twoPlayer && state.carSel[0] === state.carSel[1] && p === 1) state.carSel[1] = nx(state.carSel[1]); }
 function pickCar() {
   { const id = state.carSel[state.selPlayer]; if (carLocked(id)) { const c = RR.CARS[id]; notice(c.name + ' is locked.\nFinish ' + c.unlock + ' races in the top 3 to unlock it\n(' + racesDone() + ' / ' + c.unlock + ' done).'); return; } }
   if (state.twoPlayer && state.selPlayer === 0) { state.selPlayer = 1; if (state.carSel[1] === state.carSel[0]) cycleCar(1); state.focus = 7; return; }
@@ -1482,6 +1595,9 @@ function drawMinimap(race, me, vw, vh, small) {
     x.beginPath(); for (let i = 0; i < T.N; i += 2) x.lineTo(ox + T.X[i] * sc, oy + T.Y[i] * sc); x.closePath();
     x.strokeStyle = 'rgba(255,255,255,0.9)'; x.lineWidth = Math.max(2.5, T.W * sc + 1); x.stroke();
     x.strokeStyle = '#8c8c8c'; x.lineWidth = Math.max(1.5, T.W * sc - 0.5); x.stroke();
+    for (const k of T.cuts) { x.beginPath(); k.P.forEach(p => x.lineTo(ox + p[0] * sc, oy + p[1] * sc)); x.lineCap = 'butt';
+      x.strokeStyle = 'rgba(255,255,255,0.9)'; x.lineWidth = Math.max(2, k.CW * sc + 1); x.stroke(); x.strokeStyle = '#8c8c8c'; x.lineWidth = Math.max(1.2, k.CW * sc - 0.5); x.stroke(); }
+    x.beginPath(); for (let i = 0; i < T.N; i += 2) x.lineTo(ox + T.X[i] * sc, oy + T.Y[i] * sc); x.closePath(); x.strokeStyle = '#8c8c8c'; x.lineWidth = Math.max(1.5, T.W * sc - 0.5); x.stroke();
     x.fillStyle = '#fff'; x.fillRect(ox + T.X[0] * sc - 1.5, oy + T.Y[0] * sc - 1.5, 3, 3);
     T.mini = { c, sc, ox, oy, bw, bh };
   }
