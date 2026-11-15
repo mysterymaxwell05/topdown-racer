@@ -2169,19 +2169,53 @@ function clearInput() { for (const k in keys) keys[k] = false; }
 window.addEventListener('blur', () => { clearInput(); if (state.screen === 'race' && state.race && state.race.phase !== 'finished' && state.race.mode !== 'net') state.paused = true; });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); if (state.screen === 'race' && !(state.race && state.race.mode === 'net')) state.paused = true; } });
 
+// ---------------- controllers (Gamepad API: Xbox / PlayStation / Switch Pro / most Bluetooth pads) ----------------
+// P1 = first controller connected, P2 = second, whatever slot numbers the browser gives them.
+function padList() { const all = navigator.getGamepads ? navigator.getGamepads() : []; const out = []; for (const p of all || []) if (p && p.connected !== false) out.push(p); return out; }
 function padState(i) {
-  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-  const p = pads && pads[i]; if (!p) return null;
-  const ax = p.axes[0] || 0, b = n => p.buttons[n] && (p.buttons[n].pressed || p.buttons[n].value > 0.3);
-  return { left: ax < -0.35 || b(14), right: ax > 0.35 || b(15), up: (p.axes[1] || 0) < -0.5 || b(12), down: (p.axes[1] || 0) > 0.5 || b(13), throttle: b(0) || b(7), a: b(0), back: b(1), start: b(9) };
+  const p = padList()[i]; if (!p) return null;
+  const b = n => !!(p.buttons[n] && (p.buttons[n].pressed || p.buttons[n].value > 0.3)), val = n => (p.buttons[n] && p.buttons[n].value) || 0;
+  const ax = p.axes[0] || 0, ay = p.axes[1] || 0, dz = 0.18;
+  // analog steering on the stick (gentle near the middle, full lock at the edge); the d-pad is always full lock
+  let steer = Math.abs(ax) > dz ? Math.sign(ax) * Math.min(1, Math.pow((Math.abs(ax) - dz) / (0.85 - dz), 1.35)) : 0;
+  if (b(14)) steer = -1; if (b(15)) steer = 1;
+  return { pad: p, steer, left: ax < -0.5 || b(14), right: ax > 0.5 || b(15), up: ay < -0.5 || b(12), down: ay > 0.5 || b(13),
+    throttle: b(0) || b(5) || val(7) > 0.2, a: b(0), back: b(1) || b(8), start: b(9), y: b(3), lb: b(4), rb: b(5) };
 }
-const padPrev = [{}, {}];
-function pollPadsForMenu() {
+const padPrev = [{}, {}], padRep = [{}, {}];
+let padsSeen = 0;
+function padBusy() { return NET.overlay || document.getElementById('rr-ed') || document.getElementById('rr-tl') || document.getElementById('rr-type') || document.querySelector('.rr-pop'); }
+function pollPadsForMenu(dt) {
+  const n = padList().length;
+  if (n !== padsSeen) { if (n > padsSeen) { padToast(n === 1 ? 'Controller connected' : 'Controller ' + n + ' connected (Player ' + n + ')'); A.init(); } else padToast('Controller disconnected'); padsSeen = n; }
+  if (padBusy()) return;
+  const racing = state.screen === 'race' && !state.paused;
   for (let i = 0; i < 2; i++) {
     const p = padState(i); if (!p) continue;
-    const map = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown', a: 'Enter', back: 'Escape', start: 'KeyP' };
-    for (const k in map) { if (p[k] && !padPrev[i][k]) onPress(map[k]); padPrev[i][k] = p[k]; }
+    const prev = padPrev[i], rep = padRep[i];
+    const press = (k, code) => { if (p[k] && !prev[k]) { A.init(); A.setMusic(musicModeFor(state.screen)); onPress(code); rep[k] = 0.42; } };
+    if (!racing) for (const [k, code] of [['left', 'ArrowLeft'], ['right', 'ArrowRight'], ['up', 'ArrowUp'], ['down', 'ArrowDown']]) {
+      press(k, code);
+      if (p[k] && prev[k]) { rep[k] -= dt || 0.016; if (rep[k] <= 0) { onPress(code); rep[k] = 0.12; } }   // hold to keep moving
+    }
+    if (!racing) press('a', 'Enter');
+    press('back', 'Escape'); press('start', 'KeyP');
+    if (p.lb && !prev.lb && !racing) A.stepSong(-1); if (p.rb && !prev.rb && !racing) A.stepSong(1);
+    if (p.y && !prev.y && state.net) sendChat('preset');
+    for (const k of ['left', 'right', 'up', 'down', 'a', 'back', 'start', 'y', 'lb', 'rb']) prev[k] = p[k];
   }
+}
+function padRumble(player, strength, ms) {
+  const p = padState(player); const va = p && p.pad.vibrationActuator; if (!va || !va.playEffect) return;
+  try { va.playEffect('dual-rumble', { duration: ms || 120, strongMagnitude: Math.min(1, strength), weakMagnitude: Math.min(1, strength * 0.6) }); } catch (e) {}
+}
+function padToast(text) { state.padToast = { text, t: 2.5 }; }
+function drawPadToast() {
+  const st = state.padToast; if (!st || st.t <= 0) return;
+  ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.globalAlpha = Math.min(1, st.t); ctx.font = 'bold 10px "Trebuchet MS","Segoe UI",sans-serif';
+  const w = ctx.measureText('🎮  ' + st.text).width + 20, y = RR.MOBILE ? 96 : 56;
+  ctx.fillStyle = 'rgba(0,0,0,0.65)'; roundRect(ctx, VW / 2 - w / 2, y - 9, w, 18, 6); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🎮  ' + st.text, VW / 2, y + 1); ctx.restore();
 }
 // Original controls: accelerate + steer only [observed per review]. Opposite steering cancels [inferred].
 function playerInput(pi) {
@@ -2192,9 +2226,10 @@ function playerInput(pi) {
   else if (pi === 0) { l = K('KeyA'); r = K('KeyD'); t = K('KeyW') || K('KeyG'); }
   else { l = K('ArrowLeft'); r = K('ArrowRight'); t = K('ArrowUp') || K('Numpad0') || K('Slash'); }
   const p = padState(pi);
-  if (p) { l = l || p.left; r = r || p.right; t = t || p.throttle; }
   if (RR.MOBILE && pi === 0) { l = l || touchHeld.left; r = r || touchHeld.right; t = t || touchHeld.gas; }
-  return { steer: (r ? 1 : 0) - (l ? 1 : 0), throttle: t };
+  let steer = (r ? 1 : 0) - (l ? 1 : 0);
+  if (p) { t = t || p.throttle; if (!steer) steer = p.steer; }   // keyboard / touch win if both are used
+  return { steer, throttle: t };
 }
 
 // mouse / touch for menus
@@ -2858,8 +2893,8 @@ function handleEvents(race) {
     else if (e.type === 'pickup' && mine) { A.play(e.kind === 'N' ? 'nitro' : 'pickup'); A.say(RR.PICKUPS[e.kind].voice); if (race.mode === 'net') netEvent({ type: 'pk', i: e.idx }); }
     else if (e.type === 'pickup' && race.mode === 'net' && e.car.netBot && !e.car.puppet) netEvent({ type: 'pk', i: e.idx });
     else if (e.type === 'finish' && race.mode === 'net' && e.car.netBot && !e.car.puppet) { netEvent({ type: 'fin', t: e.car.finishTime }, e.car.netId); if (state.result && state.result.mode === 'net') state.result.times[e.car.netId] = e.car.finishTime; }
-    else if (e.type === 'wall') { if (mine) A.play('wall', e.power); if (e.power > 60) fxBurst('smoke', e.car.x, e.car.y, Math.min(10, e.power / 25) | 0, 50); }
-    else if (e.type === 'car' && (mine || (e.other && e.other.player >= 0))) A.play('car', e.power);
+    else if (e.type === 'wall') { if (mine) { A.play('wall', e.power); padRumble(e.car.player, e.power / 260, 140); } if (e.power > 60) fxBurst('smoke', e.car.x, e.car.y, Math.min(10, e.power / 25) | 0, 50); }
+    else if (e.type === 'car' && (mine || (e.other && e.other.player >= 0))) { A.play('car', e.power); if (mine) padRumble(e.car.player, e.power / 320, 100); if (e.other && e.other.player >= 0) padRumble(e.other.player, e.power / 320, 100); }
     else if (e.type === 'cone' && mine) A.play('cone');
     else if (e.type === 'finish' && mine) { A.play('finish'); if (race.mode === 'net') netEvent({ type: 'fin', t: e.car.finishTime }); }
   }
@@ -3560,10 +3595,11 @@ function drawInfo() {
     wrapped.forEach((l, k) => ctx.fillText(l, VW / 2, y + 13 + k * 11)); return y + 13 + wrapped.length * 11 + 8;
   };
   let y = 48;
-  if (RR.MOBILE) y = sec('Touch controls', ['Bottom-left arrows steer, bottom-right button accelerates (hold)', 'II pauses, \u266A skips to the next song, Song in Pause / Options picks one', 'Bluetooth controllers also work'], y);
+  if (RR.MOBILE) y = sec('Touch controls', ['Bottom-left arrows steer, bottom-right button accelerates (hold)', 'II pauses, \u266A skips to the next song, Song in Pause / Options picks one'], y);
   else y = sec('Controls', ['1 Player: Arrows or WASD steer, Up / W / Z / X / Space accelerate',
                        '2 Player: P1 A / D steer + W accelerate, P2 Left / Right + Up accelerate',
-                       'Esc or P pause   |   Gamepad: stick / D-pad steer, A or RT accelerate'], y);
+                       'Esc or P pause'], y);
+  y = sec('Controller', ['Stick / D-pad steer (the stick steers smoothly), A / RT / RB accelerate', 'Menus: D-pad or stick to move, A select, B back, Start pause, LB / RB change song, Y quick chat (Wi-Fi)', '2 Player: first controller = P1, second = P2 (keyboard still works too)'], y);
   if (!RR.MOBILE) y = sec('Hotkeys', ['1-7 change song   |   - / + music volume   |   [ / ] sound volume   |   F3 telemetry'], y);
   y = sec('Music (supplied by SecretSea)', ['Waves (main screen)   |   Empty, Pocket 2, Wasted Time, Rally, Rally 3, Stored 2'], y);
   y = sec('Sounds', ['Engine loop by qubodup, tyre squeal by audible-edge (CC-BY 3.0)', 'Pickup, nitro, cone and finish sounds by Kenney.nl (CC0)   |   Buzzer, clicks, collision by SecretSea'], y);
@@ -3594,7 +3630,7 @@ function tick(dt) {
   state.t += dt;
   chatPanel(state.net && ['carselect', 'trackselect', 'netwait', 'results', 'race'].includes(state.screen) && !state.notice && !(RR.MOBILE && ['trackselect', 'results', 'race'].includes(state.screen)), state.screen === 'trackselect' || state.screen === 'race' ? 'bl' : state.screen === 'results' ? 'bc' : '');
   if (state.songToast) state.songToast.t -= dt;
-  pollPadsForMenu();
+  pollPadsForMenu(dt); if (state.padToast) state.padToast.t -= dt;
   if (state.screen === 'title' && state.t > 3) go('menu');
   A.setPaused(state.screen === 'race' && state.paused);
   if ((state.musicWatchT = (state.musicWatchT || 0) + dt) > 0.5) { state.musicWatchT = 0; A.musicWatch(); }
@@ -3651,14 +3687,14 @@ function render() {
       if (state.cams.length === 1) drawView(race, state.cams[0], 0, 0, VW, VH);
       else { drawView(race, state.cams[0], 0, 0, VW / 2 - 1, VH); drawView(race, state.cams[1], VW / 2 + 1, 0, VW / 2 - 1, VH);
         ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = '#111'; ctx.fillRect(VW / 2 - 1, 0, 2, VH); }
-      if (RR.MOBILE && !state.paused) drawTouchControls();
+      if (RR.MOBILE && !state.paused && !padList().length) drawTouchControls();
       if (state.paused && state.pauseOpts) { ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(3,7,26,0.88)'; ctx.fillRect(0, 0, VW, VH); title('Options', 24); drawButtons(); }
       else if (state.paused) { ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, VW, VH); title('Paused', RR.MOBILE ? 112 : 56); drawButtons(); if (!RR.MOBILE) hintText('1-7 change song   |   - / + music volume   |   [ / ] sound volume', 205); else hintText('Tap the left / right side of Song to change it', 372); }
       break;
     }
     case 'results': drawResults(); break;
   }
-  drawSongToast();
+  drawSongToast(); drawPadToast();
   if (state.info) drawInfo();
   if (state.confirm) drawConfirm();
   if (state.notice) drawNotice();
