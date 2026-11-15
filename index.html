@@ -3315,7 +3315,7 @@ function startDrift() {
   save.lastCar = state.carSel[0]; persist();
   state.race = RR.createRace({ trackIndex: 0, trackDef: def, players: [{ carId: state.carSel[0] }], drift: true });
   state.race.driftK = k;
-  state.cams = [{ car: state.race.cars.find(c => c.player === 0) }];   // follow YOUR car (bots line up first on the grid) state.cams[0].x = state.cams[0].car.x; state.cams[0].y = state.cams[0].car.y;
+  { const me = state.race.cars.find(c => c.player === 0); state.cams = [{ car: me, x: me.x, y: me.y }]; }   // follow YOUR car (bots line up first on the grid)
   state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null;
   A.setMusic('game'); A.setEngines(1);
 }
@@ -3721,7 +3721,7 @@ function startCustom(seed) {
     const gh = loadGhost('c_' + C.def.id); if (!gh) { C.ghost = false; startCustom(seed); toast('No ghost on this track yet - finish this race to record one'); return; }
     pd.bots = 0; state.twoPlayer = false;
     state.race = RR.createRace({ trackIndex: 0, trackDef: pd, players: [{ carId: state.carSel[0] }], mode: 'ghost', ghost: gh });
-    state.cams = [{ car: state.race.cars[0], x: state.race.cars[0].x, y: state.race.cars[0].y }];
+    { const me = state.race.cars.find(c => c.player === 0) || state.race.cars[0]; state.cams = [{ car: me, x: me.x, y: me.y }]; }
     state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null; A.setMusic('game'); A.setEngines(1); return;
   }
   const players = state.twoPlayer ? [{ carId: state.carSel[0] }, { carId: state.carSel[1] }] : [{ carId: state.carSel[0] }];
@@ -4089,7 +4089,7 @@ function startGhostRace(ti) {
   const gh = loadGhost(ti); if (!gh) { startRace(ti); toast('No ghost on race ' + (ti + 1) + ' yet - finish this race to record one'); return; }
   state.track = ti; state.paused = false; state.pauseOpts = false; clearInput(); state.twoPlayer = false;
   state.race = RR.createRace({ trackIndex: ti, players: [{ carId: state.carSel[0] }], mode: 'ghost', ghost: gh });
-  state.cams = [{ car: state.race.cars[0], x: state.race.cars[0].x, y: state.race.cars[0].y }];
+  { const me = state.race.cars.find(c => c.player === 0) || state.race.cars[0]; state.cams = [{ car: me, x: me.x, y: me.y }]; }
   state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null;
   A.setMusic('game'); A.setEngines(1);
 }
@@ -4481,7 +4481,7 @@ function videoInput(race) {
 function startVideoTest(mode) {
   state.videoMode = mode; state.paused = false; state.pauseOpts = false; clearInput();
   state.race = RR.createRace({ videoTest: true, trackIndex: 0, players: [{ carId: state.carSel[0] }], twoPlayer: false });
-  state.cams = [{ car: state.race.cars[0], x: state.race.cars[0].x, y: state.race.cars[0].y }];
+  { const me = state.race.cars.find(c => c.player === 0) || state.race.cars[0]; state.cams = [{ car: me, x: me.x, y: me.y }]; }
   state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null;
   A.setMusic('game'); A.setEngines(1);
 }
