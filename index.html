@@ -31,7 +31,7 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
-RR.VERSION = '1.6.3';
+RR.VERSION = '1.6.4';
 RR.AI_DRIFT = { grip: 1, turn: 1, brake: 1, bendFrom: 0.2, bendSpan: 0.35, minSpeed: 100, edge: 0.92 };   // bots slide only in real corners, ease off near the road edge   // bots: lower grip / sharper turn-in = more sliding in corners
 RR.RUBBER = { close: 160, ramp: 200, boost: 0.035, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
 
@@ -3095,6 +3095,62 @@ function notice(msg) { state.notice = msg; A.play('back'); }
 
 
 
+
+// ---------------- Tutorial: a solo practice lap with step-by-step tips. Offered once; replay it from Options. ----------------
+const TUT_STEPS = [
+  { pc: 'Hold UP (or W) to accelerate.', ph: 'Hold the big triangle (bottom right) to accelerate.', pad: 'Hold A or RT to accelerate.' },
+  { pc: 'Steer with LEFT / RIGHT (or A / D). Follow the road!', ph: 'Steer with the left / right arrows. Follow the road!', pad: 'Steer with the stick or D-pad. Follow the road!' },
+  { pc: 'Tap DOWN (or S) to brake. Keep holding it when stopped to reverse.', ph: 'Tap REV (above the gas) to brake. Hold it when stopped to reverse.', pad: 'Press X or LT to brake. Hold it when stopped to reverse.' },
+  { pc: 'DRIFT: turn hard at speed so the car slides. Keep sliding until the meter at the bottom fills for a BOOST!', ph: 'DRIFT: turn hard at speed so the car slides. Keep sliding until the meter fills for a BOOST!' },
+  { pc: 'Drive over the coloured boxes: S speed, A acceleration, T tyres, N nitro. Upgrades last the whole race!' },
+  { pc: 'Race tip: hold accelerate just before GO for a GREAT START boost. Pause (Esc) any time.', ph: 'Race tip: hold the gas just before GO for a GREAT START boost.' },
+  { pc: 'Last step: finish the lap!' },
+];
+function tutText(s) { const S = TUT_STEPS[s]; return (padList().length && S.pad) || (RR.MOBILE ? S.ph : null) || S.pc; }
+function startTutorial() {
+  state.custom = null; state.campK = null; state.driftK = null; state.twoPlayer = false; state.paused = false; state.pauseOpts = false; clearInput();
+  state.track = 0;
+  const race = RR.createRace({ trackIndex: 0, players: [{ carId: carLocked(state.carSel[0]) ? 5 : state.carSel[0] }], raceSeed: 7 });
+  race.cars = race.cars.filter(c => c.player >= 0); race.laps = 1;
+  race.tut = { step: 0, t: 0, steerT: 0, flags: {} };
+  state.race = race; const me = race.cars[0]; state.cams = [{ car: me, x: me.x, y: me.y }];
+  state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null; A.setMusic('game'); A.setEngines(1);
+}
+function tutTick(race, dt) {
+  const T = race.tut, me = race.cars.find(c => c.player === 0); if (!T || !me || race.phase !== 'racing') return;
+  T.t += dt; const v = Math.hypot(me.vx, me.vy), F = T.flags;
+  if (Math.abs(me.steer || 0) > 0.3 && v > 40) T.steerT += dt;
+  if (me.reverse) F.brake = true;
+  const done = [() => v > 110, () => T.steerT > 1.5, () => F.brake, () => F.driftBoost || T.t > 25, () => F.pickup || T.t > 18, () => T.t > 6, () => false][T.step];
+  if (T.step < TUT_STEPS.length - 1 && done()) { T.step++; T.t = 0; T.flash = 0.6; A.play('pickup'); }
+}
+function drawTutorial(race, vw, vh) {
+  const T = race.tut; if (!T) return; if (T.flash > 0) T.flash -= 1 / 60;
+  const w = Math.min(vw - 20, 330), x = vw / 2 - w / 2, y = vh - (RR.MOBILE ? 168 : 74), lines = wrapLines(tutText(T.step), w - 20, 10);
+  const h = 18 + lines.length * 12;
+  ctx.save(); ctx.fillStyle = T.flash > 0 ? 'rgba(60,140,60,0.92)' : 'rgba(20,10,40,0.86)'; roundRect(ctx, x, y - h, w, h, 8); ctx.fill();
+  ctx.strokeStyle = '#ffcf40'; ctx.lineWidth = 1.5; roundRect(ctx, x, y - h, w, h, 8); ctx.stroke();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 8px "Trebuchet MS",sans-serif';
+  ctx.fillText('TUTORIAL  ' + (T.step + 1) + ' / ' + TUT_STEPS.length, x + 10, y - h + 8);
+  ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillText(RR.MOBILE ? 'Pause to skip' : 'Esc to skip', x + w - 10, y - h + 8);
+  ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; lines.forEach((l, i) => ctx.fillText(l, x + 10, y - h + 21 + i * 12));
+  ctx.restore();
+}
+function finishTutorial(completed) {
+  save.tutDone = 1; save.tutAsked = 1; persist(); state.race = null; A.stopEngines();
+  go('menu'); if (completed) { A.play('finish'); toast('Tutorial complete - you\'re ready to race!'); }
+}
+function offerTutorial() {   // once, on the first visit to the main menu
+  if (save.tutAsked || document.getElementById('rr-idea')) return; save.tutAsked = 1; persist();
+  RR.Editor.css(); const d = document.createElement('div'); d.id = 'rr-idea';
+  d.style.cssText = 'position:fixed;inset:0;z-index:70;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;font-family:"Trebuchet MS",sans-serif';
+  d.innerHTML = '<div style="background:#2a0606;border:3px solid #ff2c1e;border-radius:14px;padding:16px;width:min(380px,90vw);color:#fff;text-align:center"><h3 style="margin:0 0 6px">New to Retro Racing?</h3>' +
+    '<div style="font-size:13px;color:#ffc8b8;margin-bottom:12px">Take a quick practice lap that shows you how to drive, drift, brake and use pick-ups (about 1 minute).<br>You can replay it any time from Options.</div>' +
+    '<div style="display:flex;gap:8px;justify-content:center"><button id="tn" class="rr-b">No thanks</button><button id="ty" class="rr-b green">Play tutorial</button></div></div>';
+  document.body.appendChild(d);
+  d.querySelector('#tn').onclick = () => d.remove();
+  d.querySelector('#ty').onclick = () => { d.remove(); startTutorial(); };
+}
 // ---------------- your name (Options) ----------------
 function cleanName(s) { s = String(s || '').replace(/[^A-Za-z0-9 _.\-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 12); return s || null; }
 function myName() { return cleanName(save.playerName); }
@@ -3423,6 +3479,7 @@ function optionsButtons(back) {
       B(170, 218, 140, 20, 'Controls & Credits', () => { state.info = true; }, { blue: 1 }),
       B(190, 243, 100, 22, 'Back', back),
       B(20, 46, 120, 24, 'Name: ' + (myName() || 'not set'), () => askName(), { blue: 1 }),
+      ...(state.paused ? [] : [B(20, 76, 120, 24, 'Play Tutorial', () => startTutorial(), { blue: 1 })]),
   ];
 }
 function askConfirm(text, yesLabel, yes, noLabel, no) { state.confirm = { text, yesLabel, yes, noLabel, no }; state.focus = 0; A.play('back'); }
@@ -3492,8 +3549,8 @@ function buttonsLandscape() {
       if (state.paused && state.pauseOpts) return optionsButtons(() => { state.pauseOpts = false; state.focus = 3; });
       if (state.paused) return [
         B(180, 80, 120, 26, 'Resume', () => { state.paused = false; clearInput(); }),
-        B(180, 111, 120, 26, 'Restart', () => state.race.mode === 'net' ? notice('A Wi-Fi race can\'t be restarted.\nThe host can pick the next race when it ends.') : state.race.video ? startVideoTest(state.videoMode === 'replay' ? 'replay' : 'drive') : state.race.camp != null ? startCampRace() : state.race.drift ? startDrift() : state.race.custom ? startCustom() : startRace(state.track)),
-        B(180, 142, 120, 26, 'Quit', () => { if (state.race.mode === 'net') { netLeave(); return; } if (state.race.camp != null) { state.race = null; A.stopEngines(); go('camp'); return; } if (state.race.drift) { const k = state.driftK; state.race = null; go('drift'); state.focus = k; return; } if (state.race.custom) { backToCustom(); return; } state.race = null; state.videoMode = null; go('trackselect'); }),
+        B(180, 111, 120, 26, 'Restart', () => state.race.mode === 'net' ? notice('A Wi-Fi race can\'t be restarted.\nThe host can pick the next race when it ends.') : state.race.video ? startVideoTest(state.videoMode === 'replay' ? 'replay' : 'drive') : state.race.tut ? startTutorial() : state.race.camp != null ? startCampRace() : state.race.drift ? startDrift() : state.race.custom ? startCustom() : startRace(state.track)),
+        B(180, 142, 120, 26, 'Quit', () => { if (state.race.mode === 'net') { netLeave(); return; } if (state.race.tut) { finishTutorial(false); return; } if (state.race.camp != null) { state.race = null; A.stopEngines(); go('camp'); return; } if (state.race.drift) { const k = state.driftK; state.race = null; go('drift'); state.focus = k; return; } if (state.race.custom) { backToCustom(); return; } state.race = null; state.videoMode = null; go('trackselect'); }),
         B(180, 173, 120, 26, 'Options', () => { state.pauseOpts = true; state.focus = 0; }),
       ].concat(RR.MOBILE ? [B(150, 206, 180, 24, 'Song: ' + A.SONGS[A.songIdx].name, () => A.stepSong(1), { song: 1 })] : []);
       return [];
@@ -3524,7 +3581,7 @@ function buttonsLandscape() {
 // Phone (portrait 270x480) positions, by screen, in the same order as the landscape lists.
 const PORTRAIT = {
   menu: [[14, 230, 116, 38], [140, 230, 116, 38], [14, 280, 116, 38], [140, 280, 116, 38], [14, 330, 116, 38], [140, 330, 116, 38], [4, 4, 92, 20], [174, 4, 92, 20], [4, 454, 56, 22], [186, 454, 80, 22], [142, 454, 40, 22]],
-  options: [[45, 56, 180, 28], [45, 88, 180, 28], [45, 120, 180, 28], [45, 152, 180, 28], [45, 184, 180, 28], [45, 222, 180, 26], [45, 254, 180, 26], [65, 292, 140, 28], [85, 430, 100, 32], [65, 330, 140, 28]],
+  options: [[45, 56, 180, 28], [45, 88, 180, 28], [45, 120, 180, 28], [45, 152, 180, 28], [45, 184, 180, 28], [45, 222, 180, 26], [45, 254, 180, 26], [65, 292, 140, 28], [85, 430, 100, 32], [65, 330, 140, 28], [65, 364, 140, 28]],
   carselect: [[33, 262, 60, 44], [105, 262, 60, 44], [177, 262, 60, 44], [33, 322, 60, 44], [105, 322, 60, 44], [177, 322, 60, 44], [10, 424, 80, 40], [130, 418, 130, 48]],
   race: [[65, 146, 140, 34], [65, 188, 140, 34], [65, 230, 140, 34], [65, 272, 140, 34], [35, 326, 200, 32]],
   results: [[8, 424, 76, 40], [92, 424, 76, 40], [176, 418, 86, 48], [8, 372, 160, 40]],
@@ -4112,6 +4169,7 @@ function finishModeRace(race) {
 }
 function finishRace() {
   const race = state.race;
+  if (race.tut) return finishTutorial(true);
   if (race.drift) return finishDrift(race);
   if (race.mode) return finishModeRace(race);
   // fast-forward remaining opponents so they get real finish times
@@ -4148,6 +4206,7 @@ function finishRace() {
 function handleEvents(race) {
   for (const e of race.events) {
     const mine = e.car && e.car.player >= 0;
+    if (race.tut && mine) race.tut.flags[e.type] = true;
     if (e.type === 'buzz') A.play('buzz_full');
     else if (e.type === 'finalLap') A.say('Final lap');
     else if (e.type === 'pickup' && mine) { A.play(e.kind === 'N' ? 'nitro' : 'pickup'); A.say(RR.PICKUPS[e.kind].voice); if (race.mode === 'net') netEvent({ type: 'pk', i: e.idx }); }
@@ -4542,6 +4601,7 @@ function drawHUD(race, car, vx, vy, vw, vh) {
   ctx.save(); ctx.setTransform(S, 0, 0, S, vx * S, vy * S);
   drawDriftMeter(car, vw, vh);
   if (race.drift) drawDriftScore(race, vw, vh);
+  if (race.tut) { tutTick(race, 1 / 60); drawTutorial(race, vw, vh); }
   const small = vw < 300, big = small ? 3 : 4;
   // top band [observed]
   ctx.fillStyle = 'rgba(40,40,40,0.38)'; ctx.fillRect(0, 0, vw, 14);
@@ -4978,7 +5038,7 @@ function render() {
   ctx.imageSmoothingEnabled = false;
   switch (state.screen) {
     case 'title': menuBG(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(20,0,0,0.5)'; ctx.fillRect(0, 0, VW, VH); drawLogo(VW / 2, VH / 2 - 6, 1.5); break;
-    case 'menu': menuBG(); if (RR.MOBILE) drawLogo(VW / 2, 120, 1.0); else drawLogo(VW / 2, 56, 0.95); drawButtons(); drawTribute(); drawVersion(); break;
+    case 'menu': if (!save.tutAsked && !NET.overlay && !state.notice) offerTutorial(); menuBG(); if (RR.MOBILE) drawLogo(VW / 2, 120, 1.0); else drawLogo(VW / 2, 56, 0.95); drawButtons(); drawTribute(); drawVersion(); break;
     case 'options': menuBG(); title('Options', 24); drawButtons();
       ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = '#ffb0a0'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center';
       if (!RR.MOBILE) ctx.fillText('Settings below the line are PC additions (not in the original).  Left/Right changes volume.', VW / 2, 138);
