@@ -31,7 +31,7 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
-RR.VERSION = '1.7.0';
+RR.VERSION = '1.7.1';
 RR.AI_DRIFT = { grip: 1, turn: 1, brake: 1, bendFrom: 0.2, bendSpan: 0.35, minSpeed: 100, edge: 0.92 };   // bots slide only in real corners, ease off near the road edge   // bots: lower grip / sharper turn-in = more sliding in corners
 RR.RUBBER = { close: 160, ramp: 200, boost: 0.035, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
 
@@ -2293,7 +2293,7 @@ function openList(opts) {
       const c = document.createElement('div'); c.className = 'rr-card';
       c.appendChild(thumb(t, 120, 72));
       const info = document.createElement('div'); info.style.flex = '1'; info.style.minWidth = '0';
-      info.innerHTML = '<div class="nm">' + esc(t.name) + '</div><div class="meta">' + (RR.THEMES[t.theme] || RR.THEMES.grass).name + ' · ' + RR.TIMES[t.time || 'day'] + ' · ' + t.laps + ' laps · ' + t.bots + ' bots (' + t.diff + ')' + (t.sharedId ? ' · <b style="color:#ffcf40">code #' + t.sharedId + '</b>' : '') + (t.author ? ' · by ' + esc(t.author) : '') + (RR.game.bestOf(t.id) ? ' · best ' + RR.game.bestOf(t.id).toFixed(2) + ' s' : '') + '</div>';
+      info.innerHTML = '<div class="nm">' + esc(t.name) + '</div><div class="meta">' + (RR.THEMES[t.theme] || RR.THEMES.grass).name + ' · ' + RR.TIMES[t.time || 'day'] + ' · ' + t.laps + ' laps · ' + t.bots + ' bots (' + t.diff + ')' + (isOnline(t) ? ' · <b style="color:#7cff6a">online</b> <b style="color:#ffcf40">#' + t.sharedId + '</b>' : t.fromOnline && t.sharedId ? ' · from online <b style="color:#ffcf40">#' + t.sharedId + '</b>' : ' · offline') + (t.author ? ' · by ' + esc(t.author) : '') + (RR.game.bestOf(t.id) ? ' · best ' + RR.game.bestOf(t.id).toFixed(2) + ' s' : '') + '</div>';
       c.appendChild(info);
       const bt = document.createElement('div'); bt.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:260px';
       const mk = (label, cls, fn) => { const b = document.createElement('button'); b.className = 'rr-b ' + cls; b.textContent = label; b.onclick = fn; bt.appendChild(b); return b; };
@@ -2303,8 +2303,12 @@ function openList(opts) {
         if (RR.game.hasGhost(t.id)) mk('vs Ghost', 'blue', () => { closeAll(); RR.game.playCustom(t, { from: 'list', ghost: true }); });
         mk('Edit', 'blue', () => edit(t));
         mk('Copy', '', () => { const n = JSON.parse(JSON.stringify(t)); n.id = newId(); n.name = t.name + ' copy'; store.put(n); draw(); });
+        if (isMine(t)) { const ob = mk(isOnline(t) ? 'Online: ON' : 'Online: OFF', isOnline(t) ? 'green' : '', async () => {
+          ob.disabled = true; ob.textContent = '...';
+          try { if (isOnline(t)) await unpublish(t); else await publish(t); } catch (err) { ob.textContent = 'Failed'; setTimeout(draw, 1500); return; }
+          draw(); }); ob.title = 'Online tracks get a short #code and show in Browse online tracks'; }
         mk('Share', '', () => shareTrack(t, draw));
-        const del = mk('Delete', '', () => { if (del.dataset.sure) { store.del(t.id); draw(); } else { del.dataset.sure = 1; del.textContent = 'Sure? Delete'; setTimeout(() => { if (del.isConnected) { delete del.dataset.sure; del.textContent = 'Delete'; } }, 3000); } });
+        const del = mk('Delete', '', () => { if (del.dataset.sure) { if (isOnline(t)) api('rpc/unpublish_track', { p_id: t.sharedId, p_dev: RR.game.devId() }).catch(() => {}); store.del(t.id); draw(); } else { del.dataset.sure = 1; del.textContent = 'Sure? Delete'; setTimeout(() => { if (del.isConnected) { delete del.dataset.sure; del.textContent = 'Delete'; } }, 3000); } });
       }
       c.appendChild(bt); L.appendChild(c);
     });
@@ -2314,7 +2318,7 @@ function openList(opts) {
       (p, close) => { p.querySelector('#x').onclick = close; p.querySelector('#tc').focus(); p.querySelector('#ok').onclick = async () => { p.querySelector('#st').textContent = 'Loading...'; try { const t = await loadAnyCode(p.querySelector('#tc').value); store.put(t); close(); draw(); } catch (e) { p.querySelector('#st').textContent = e && e.msg ? e.msg : 'That code did not work.'; } }; });
     const br = d.querySelector('#br'); if (br) br.onclick = () => browseOnline(draw);
   };
-  draw();
+  draw(); if (!opts.net) syncOnline().then(() => { if (document.getElementById('rr-tl')) draw(); }).catch(() => {});
 }
 
 // ---------- shared tracks online (Supabase 'tracks' table): short #codes, browse, play ----------
@@ -2329,33 +2333,37 @@ async function loadAnyCode(code) {
   if (m) {
     const rows = await api('tracks?select=id,code,name,author&id=eq.' + m[1]);
     if (!rows || !rows.length) throw { msg: 'No online track #' + m[1] + '.' };
-    const t = await unpackCode(rows[0].code); t.sharedId = rows[0].id; t.sharedCode = rows[0].code; t.author = rows[0].author;
+    const t = await unpackCode(rows[0].code); t.sharedId = rows[0].id; t.sharedCode = rows[0].code; t.author = rows[0].author; t.fromOnline = true;
     api('rpc/play_track', { p_id: rows[0].id }).catch(() => {}); return t;
   }
   return unpackCode(code);
 }
+function isMine(t) { return !t.fromOnline; }
+function isOnline(t) { return isMine(t) && !!t.sharedId && t.online !== false; }
+async function publish(t) {   // put this track online (or update it, keeping its #code)
+  const code = await packCode(t);
+  const id = await api('rpc/publish_track', { p_id: t.sharedId || null, p_code: code, p_name: t.name, p_author: RR.game.myName() || 'Anonymous', p_dev: RR.game.devId(), p_theme: t.theme });
+  if (!id) throw { msg: 'The server refused this track (too many uploads today?).' };
+  t.sharedId = id; t.sharedCode = code; t.online = true; store.put(t); return id;
+}
+async function unpublish(t) { if (t.sharedId && isMine(t)) await api('rpc/unpublish_track', { p_id: t.sharedId, p_dev: RR.game.devId() }); delete t.sharedId; delete t.sharedCode; t.online = false; store.put(t); }
+async function syncOnline() {   // own online tracks that were edited: upload the new version under the same #code
+  for (const t of store.load()) { if (!isOnline(t)) continue; try { const code = await packCode(t); if (code !== t.sharedCode) await publish(t); } catch (e) {} }
+}
 async function shareTrack(t, redraw) {
-  const code = await packCode(t), fresh = t.sharedId && t.sharedCode === code;
+  const code = await packCode(t), on = isOnline(t) && t.sharedCode === code;
   pop('<h3 style="margin:0 0 6px">Share "' + esc(t.name) + '"</h3>' +
-    '<div id="sh">' + (fresh ? shortBox(t.sharedId) : '<p style="margin:0 0 6px;color:#ffc8b8;font-size:13px">Put it online to get a short code like <b>#1234</b> - anyone can then find it in <b>Browse online tracks</b> or type the code.</p><button class="rr-b green" id="on">Share online (short code)</button><p id="st" style="color:#ffcf40;min-height:16px;margin:4px 0"></p>') + '</div>' +
-    '<details style="margin-top:8px"><summary style="cursor:pointer;color:#ffc8b8;font-size:13px">Offline code (' + code.length + ' characters - works without internet)</summary><textarea readonly style="margin-top:6px">' + code + '</textarea><button class="rr-b blue" id="cpl" style="margin-top:4px">Copy long code</button></details>' +
+    (on ? shortBox(t.sharedId) : '<p style="margin:0 0 6px;color:#ffc8b8;font-size:13px">This track is <b>offline</b>. Turn <b>Online</b> on (in My Tracks) to get a short code like <b>#1234</b> and list it in Browse online tracks. Or send the code below - it works without internet.</p>') +
+    '<details style="margin-top:8px"' + (on ? '' : ' open') + '><summary style="cursor:pointer;color:#ffc8b8;font-size:13px">Offline code (' + code.length + ' characters)</summary><textarea readonly style="margin-top:6px">' + code + '</textarea><button class="rr-b blue" id="cpl" style="margin-top:4px">Copy long code</button></details>' +
     '<div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end"><button class="rr-b" id="x">Close</button></div>',
     (p, close) => {
       p.querySelector('#x').onclick = close;
       const copy = (txt, btn) => { try { navigator.clipboard.writeText(txt); } catch (e) {} btn.textContent = 'Copied!'; };
-      p.querySelector('#cpl').onclick = e => copy(code, e.target);
-      const wireShort = () => { const b = p.querySelector('#cps'); if (b) b.onclick = () => copy('#' + t.sharedId, b); };
-      wireShort();
-      const on = p.querySelector('#on'); if (on) on.onclick = async () => {
-        on.disabled = true; p.querySelector('#st').textContent = 'Uploading...';
-        try { const id = await api('rpc/share_track', { p_code: code, p_name: t.name, p_author: RR.game.myName() || 'Anonymous', p_dev: RR.game.devId(), p_theme: t.theme });
-          if (!id) throw { msg: 'The server refused this track (too many shares today?).' };
-          t.sharedId = id; t.sharedCode = code; store.put(t); p.querySelector('#sh').innerHTML = shortBox(id); wireShort(); if (redraw) redraw();
-        } catch (e) { on.disabled = false; p.querySelector('#st').textContent = (e && e.msg) || 'Upload failed.'; }
-      };
+      p.querySelector('#cpl').onclick = ev => copy(code, ev.target);
+      const b = p.querySelector('#cps'); if (b) b.onclick = () => copy('#' + t.sharedId, b);
     });
 }
-function shortBox(id) { return '<p style="margin:0 0 4px;color:#ffc8b8;font-size:13px">Your track is online! Its code:</p><div style="font:bold 34px \'Trebuchet MS\',sans-serif;color:#ffcf40;letter-spacing:2px">#' + id + '</div><p style="margin:2px 0 6px;color:#ffc8b8;font-size:12px">Friends type it in <b>Paste a track code</b>, or find it in <b>Browse online tracks</b>.</p><button class="rr-b blue" id="cps">Copy #' + id + '</button>'; }
+function shortBox(id) { return '<p style="margin:0 0 4px;color:#ffc8b8;font-size:13px">Your track is online! Its code:</p><div style="font:bold 34px \'Trebuchet MS\',sans-serif;color:#ffcf40;letter-spacing:2px">#' + id + '</div><p style="margin:2px 0 6px;color:#ffc8b8;font-size:12px">Friends type it in <b>Paste a track code</b>, or find it in <b>Browse online tracks</b>. Turn Online off or delete the track and the code is freed.</p><button class="rr-b blue" id="cps">Copy #' + id + '</button>'; }
 function browseOnline(redraw) {
   pop('<h3 style="margin:0 0 6px">Online tracks</h3><div style="display:flex;gap:6px;margin-bottom:6px"><button class="rr-b blue" id="tn">Newest</button><button class="rr-b" id="tp">Most played</button><span style="flex:1"></span><button class="rr-b" id="x">Close</button></div>' +
     '<div id="ol" style="max-height:min(60vh,420px);overflow:auto"></div>', (p, close) => {
@@ -4036,6 +4044,8 @@ function startRace(ti, seed) {
 // goes straight between the devices), or offline long codes for 2 players.
 const NET = { role: null, ok: false, myId: 0, max: 6, fillBots: true, peers: [], host: null, overlay: null, sendT: 0, roster: {}, room: null, es: null, chat: [], nextId: 1 };
 RR.RELAY = RR.RELAY || 'https://ntfy.sh/';
+// how devices find a path to each other: several public STUN servers (+ a TURN relay, if one is set up, for players on different networks)
+RR.ICE_SERVERS = RR.ICE_SERVERS || [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' }];
 const CHAT_PRESETS = ['Good luck!', 'See you later!', "Let's go!", 'Ready!', 'GG!', 'Nice race!', 'Rematch?', 'Watch out!', 'Catch me if you can!', 'Ha ha!'];
 function netSend(ch, m) { try { if (ch && ch.readyState === 'open') ch.send(typeof m === 'string' ? m : JSON.stringify(m)); } catch (e) {} }
 function netEvent(m, asId) {   // reliable message from me (or one of my bots) to everyone
@@ -4066,7 +4076,7 @@ async function netUnpack(code) {
 }
 function netWaitIce(pc) { return new Promise(res => { if (pc.iceGatheringState === 'complete') return res(); const t = setTimeout(res, 2500); pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } }); }); }
 function netNewPC(link) {
-  const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+  const pc = new RTCPeerConnection({ iceServers: RR.ICE_SERVERS });
   pc.addEventListener('connectionstatechange', () => { if (['failed', 'disconnected', 'closed'].includes(pc.connectionState) && link.open) netLinkDown(link); });
   link.pc = pc; return pc;
 }
@@ -4234,7 +4244,8 @@ function joinRoom(code, status) {
   NET.es = relayListen(code, async m => {
     if (m.g !== gid) return;
     if (m.k === 'full') { status('That room is full (or already racing).'); return; }
-    if (m.k === 'offer' && !answered) { answered = true; status('Found the host - connecting...'); relayPost(code, { k: 'answer', g: gid, d: await netGuestAnswer(m.d) }); }
+    if (m.k === 'offer' && !answered) { answered = true; status('Found the host - connecting...'); relayPost(code, { k: 'answer', g: gid, d: await netGuestAnswer(m.d) });
+      setTimeout(() => { if (!NET.ok && NET.role === 'guest' && NET.room === code) status('Could not connect to the host. This usually happens when you are on different networks (another house, or a phone on mobile data). Try both on the same Wi-Fi.'); }, 15000); }
   });
   NET.es.onopen = () => { relayPost(code, { k: 'join', g: gid }).catch(() => status('Could not reach the room server - check the internet, or use offline codes.')); };
   NET.es.onerror = () => { if (!NET.ok) status('Could not reach the room server - check the internet, or use offline codes.'); };
