@@ -31,6 +31,7 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
+RR.VERSION = '1.4.0';
 RR.NUM_CARS = 8;           // [observed] "POS 5 / 8"
 RR.PLAYER_GRID_SLOT = 7;   // [observed] player car #8 at back of grid in race-16 start screenshot
 
@@ -128,7 +129,14 @@ RR.TRACKS = [
   { name: 'RACE 17', w: 94,  trees: 22, umb: 10, pts: [[3,16],[12,16],[15,13],[19,13],[19,16],[25,16],[25,8],[21,4],[21,1],[15,1],[15,8],[10,8],[10,4],[3,4]] },
   { name: 'RACE 18', w: 92,  trees: 24, umb: 11, pts: [[3,17],[26,17],[26,12],[20,12],[20,8],[26,8],[26,2],[15,2],[15,13],[10,13],[10,2],[3,2]], cuts: [[[23,12],[23,8]]] },
 ];
-RR.FENCE_OFFSET = 22;     // px from road edge to fence [measured approx from desktop screenshot]
+// look of each race (terrain theme + time of day); the terrain is only looks: off-road always drives like grass
+[['grass', 'day'], ['grass', 'day'], ['desert', 'day'], ['grass', 'sunset'], ['snow', 'day'], ['autumn', 'day'], ['grass', 'night'], ['desert', 'sunset'], ['snow', 'day'],
+ ['beach', 'day'], ['autumn', 'sunset'], ['desert', 'night'], ['snow', 'night'], ['grass', 'day'], ['beach', 'sunset'], ['autumn', 'night'], ['snow', 'sunset'], ['grass', 'night']]
+  .forEach((l, i) => { if (RR.TRACKS[i]) { RR.TRACKS[i].theme = l[0]; RR.TRACKS[i].time = l[1]; } });
+
+RR.FENCE_OFFSET = 22;     // old run-off (still the minimum)
+RR.RUNOFF = 64;           // wanted run-off from road edge to rail, where the layout has room (art revamp)
+RR.HD = RR.MOBILE ? 1.5 : 2;   // track art detail (pixels per world unit)
 
 // Difficulty: opponent stat scale by race index [inferred: reviewer reports a steep late-game spike]
 RR.aiScaleForRace = (i) => 0.955 + 0.0075 * i;   // playtest 14: early races much tougher (race 1 was 0.90), race 18 about the same
@@ -224,14 +232,54 @@ const CAR = [
   '.KKKKKKKKKKKKKKKKKK.',
 ];
 RR.CAR_W = 20; RR.CAR_H = 26;
+// HD-2D car: drawn at 4x in the same 20x26 footprint (nose up), shaded and outlined; draw it with (-10,-13,20,26)
 RR.makeCarSprite = function (liv) {
-  const c = RR.mk(RR.CAR_W, RR.CAR_H), x = c.getContext('2d');
-  const pal = { K: '#141414', G: '#3a3a3a', B: liv.B, b: liv.b, L: liv.L, A: liv.A, a: liv.a, D: '#202028', W: '#f4f4f4' };
-  for (let r = 0; r < CAR.length; r++) for (let q = 0; q < 20; q++) {
-    const ch = CAR[r][q]; if (ch === '.' || !ch) continue;
-    x.fillStyle = pal[ch]; x.fillRect(q, r, 1, 1);
-  }
-  return c;
+  const sc = 4, c = RR.mk(RR.CAR_W * sc, RR.CAR_H * sc), x = c.getContext('2d'); x.scale(sc, sc);
+  x.lineJoin = 'round'; x.lineCap = 'round';
+  const out = 'rgba(10,10,14,0.85)';
+  const rr = (X, Y, w, h, r) => { x.beginPath(); if (x.roundRect) x.roundRect(X, Y, w, h, r); else x.rect(X, Y, w, h); };
+  const grad = (x0, x1, c0, c1, c2) => { const g = x.createLinearGradient(x0, 0, x1, 0); g.addColorStop(0, c0); g.addColorStop(0.5, c1); g.addColorStop(1, c2); return g; };
+  const tyre = (X, Y, w, h) => {
+    rr(X, Y, w, h, 1.1); x.fillStyle = grad(X, X + w, '#2c2c30', '#141416', '#0a0a0c'); x.fill(); x.lineWidth = 0.35; x.strokeStyle = out; x.stroke();
+    x.strokeStyle = 'rgba(255,255,255,0.12)'; x.lineWidth = 0.3; for (let k = 1; k < h; k += 1.1) { x.beginPath(); x.moveTo(X + 0.5, Y + k); x.lineTo(X + w - 0.5, Y + k); x.stroke(); }
+    x.fillStyle = 'rgba(190,190,200,0.55)'; rr(X + w * 0.32, Y + h * 0.3, w * 0.36, h * 0.4, 0.4); x.fill();
+  };
+  // suspension arms
+  x.strokeStyle = '#222'; x.lineWidth = 0.6;
+  x.beginPath(); x.moveTo(8.6, 6.4); x.lineTo(3.5, 6.2); x.moveTo(11.4, 6.4); x.lineTo(16.5, 6.2); x.moveTo(8.8, 8.6); x.lineTo(3.5, 7.8); x.moveTo(11.2, 8.6); x.lineTo(16.5, 7.8);
+  x.moveTo(6, 19); x.lineTo(2.5, 19.5); x.moveTo(14, 19); x.lineTo(17.5, 19.5); x.stroke();
+  tyre(0.8, 3.8, 3.8, 6.2); tyre(15.4, 3.8, 3.8, 6.2);
+  tyre(0.3, 16.6, 4.6, 7.2); tyre(15.1, 16.6, 4.6, 7.2);
+  // rear wing
+  rr(2.6, 22.4, 14.8, 3.2, 0.6); x.fillStyle = grad(2.6, 17.4, liv.A, liv.A, liv.a); x.fill(); x.lineWidth = 0.4; x.strokeStyle = out; x.stroke();
+  x.fillStyle = 'rgba(255,255,255,0.28)'; x.fillRect(3.2, 22.8, 13.6, 0.7);
+  x.fillStyle = '#1a1a1e'; x.fillRect(2.4, 22, 1.1, 4); x.fillRect(16.5, 22, 1.1, 4);
+  // body: sidepods + engine cover (coke-bottle shape)
+  x.beginPath();
+  x.moveTo(8.3, 6); x.lineTo(11.7, 6); x.quadraticCurveTo(12.4, 9, 14.8, 10.2); x.lineTo(15.2, 15.5); x.quadraticCurveTo(14.6, 19.5, 12.4, 21.4);
+  x.lineTo(12, 23.2); x.lineTo(8, 23.2); x.lineTo(7.6, 21.4); x.quadraticCurveTo(5.4, 19.5, 4.8, 15.5); x.lineTo(5.2, 10.2); x.quadraticCurveTo(7.6, 9, 8.3, 6); x.closePath();
+  x.fillStyle = grad(4.8, 15.2, liv.L, liv.B, liv.b); x.fill(); x.lineWidth = 0.45; x.strokeStyle = out; x.stroke();
+  // sidepod intakes
+  x.fillStyle = 'rgba(0,0,0,0.55)'; rr(5.4, 10.6, 1.6, 1.4, 0.5); x.fill(); rr(13, 10.6, 1.6, 1.4, 0.5); x.fill();
+  // nose
+  x.beginPath(); x.moveTo(9.1, 1.6); x.lineTo(10.9, 1.6); x.lineTo(11.8, 8); x.lineTo(8.2, 8); x.closePath();
+  x.fillStyle = grad(8.2, 11.8, liv.L, liv.B, liv.b); x.fill(); x.lineWidth = 0.4; x.strokeStyle = out; x.stroke();
+  x.fillStyle = 'rgba(255,255,255,0.85)'; x.beginPath(); x.moveTo(9.7, 2.2); x.lineTo(10.3, 2.2); x.lineTo(10.6, 7.6); x.lineTo(9.4, 7.6); x.closePath(); x.fill();   // nose stripe
+  // front wing
+  rr(1.2, 0.6, 17.6, 2.6, 0.7); x.fillStyle = grad(1.2, 18.8, liv.A, liv.A, liv.a); x.fill(); x.lineWidth = 0.4; x.strokeStyle = out; x.stroke();
+  x.fillStyle = 'rgba(255,255,255,0.3)'; x.fillRect(2, 0.95, 16, 0.6);
+  x.fillStyle = '#1a1a1e'; x.fillRect(0.9, 0.3, 1, 3.2); x.fillRect(18.1, 0.3, 1, 3.2);
+  // cockpit + driver
+  rr(8.1, 11, 3.8, 5, 1.6); x.fillStyle = '#0c0c10'; x.fill();
+  const hg = x.createRadialGradient(9.4, 12.6, 0.2, 10, 13.4, 2); hg.addColorStop(0, '#ffffff'); hg.addColorStop(0.6, '#d8d8de'); hg.addColorStop(1, '#8a8a94');
+  x.fillStyle = hg; x.beginPath(); x.arc(10, 13.4, 1.75, 0, 7); x.fill();
+  x.fillStyle = liv.A === liv.B ? '#222' : liv.A; x.beginPath(); x.ellipse(10, 12.3, 1.3, 0.55, 0, 0, 7); x.fill();   // visor band
+  // airbox / engine cover stripe and roll hoop
+  x.fillStyle = 'rgba(0,0,0,0.5)'; rr(9.2, 16.2, 1.6, 1.2, 0.4); x.fill();
+  x.fillStyle = liv.L; x.globalAlpha = 0.7; rr(9.4, 17.6, 1.2, 4.6, 0.5); x.fill(); x.globalAlpha = 1;
+  // gloss highlight along the left side of the body
+  x.strokeStyle = 'rgba(255,255,255,0.35)'; x.lineWidth = 0.5; x.beginPath(); x.moveTo(6, 11); x.quadraticCurveTo(5.5, 15.5, 7.6, 20.4); x.stroke();
+  c.ws = RR.CAR_W; c.hs = RR.CAR_H; return c;
 };
 RR.makeShadowSprite = function () {
   const c = RR.mk(RR.CAR_W, RR.CAR_H), x = c.getContext('2d');
@@ -273,6 +321,25 @@ RR.makeUmbrella = function (r, col) {
   }
   return pixelate(c);
 };
+RR.makeUmbrellaHD = function (r, col) {
+  const sc = 2, s = (r * 2 + 8) * sc, c = RR.mk(s, s), x = c.getContext('2d'); x.scale(sc, sc);
+  const cx = r + 4, cy = r + 4, A = col === 'red' ? ['#e83a24', '#ffffff'] : ['#2a6ee0', '#ffffff'];
+  for (let i = 0; i < 8; i++) {
+    const a0 = (i + 0.5) * Math.PI / 4, a1 = (i + 1.5) * Math.PI / 4;
+    x.fillStyle = A[i % 2]; x.beginPath(); x.moveTo(cx, cy); x.lineTo(cx + Math.cos(a0) * r, cy + Math.sin(a0) * r); x.lineTo(cx + Math.cos(a1) * r, cy + Math.sin(a1) * r); x.closePath(); x.fill();
+  }
+  const g = x.createLinearGradient(cx - r, cy - r, cx + r, cy + r); g.addColorStop(0, 'rgba(255,255,255,0.3)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,0.3)');
+  x.fillStyle = g; x.beginPath(); for (let i = 0; i < 8; i++) { const a = (i + 0.5) * Math.PI / 4; x.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); } x.closePath(); x.fill();
+  x.fillStyle = '#ddd'; x.beginPath(); x.arc(cx, cy, 1.6, 0, 7); x.fill();
+  c.r = r; c.ws = s / sc; return c;
+};
+// soft car shadow (blurred silhouette), 2x
+RR.makeSoftShadow = function () {
+  const sc = 2, c = RR.mk(36 * sc, 42 * sc), x = c.getContext('2d'); x.scale(sc, sc);
+  x.shadowColor = 'rgba(0,0,0,0.55)'; x.shadowBlur = 5 * sc; x.shadowOffsetX = 200 * sc;
+  x.fillStyle = '#000'; x.beginPath(); x.roundRect ? x.roundRect(8 - 200, 8, 20, 26, 5) : x.rect(8 - 200, 8, 20, 26); x.fill();
+  return c;
+};
 function pixelate(c) { // snap alpha to hard edges for pixel look
   const x = c.getContext('2d'), d = x.getImageData(0, 0, c.width, c.height), p = d.data;
   for (let i = 3; i < p.length; i += 4) if (p[i] < 40) p[i] = 0; else if (p[i] > 200) p[i] = 255;
@@ -297,9 +364,25 @@ RR.makeCone = function () {
 };
 
 // ---------------- Track builder ----------------
-const U = 100, MARGIN = 2;
+const U = 100, MARGIN = 3;
 function norm(x, y) { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; }
 
+RR.TRACK_UNIT = 100; RR.TRACK_MARGIN = 3;
+RR.trackShape = function (def) {   // quick outline for the track maker: chamfered road polygon + start line, world units
+  const W = def.w, n = def.pts.length; if (n < 3) return null;
+  const pts = def.pts.map(p => [(p[0] + MARGIN - 1) * U, (p[1] + MARGIN - 1) * U]), cham = [];
+  for (let i = 0; i < n; i++) {
+    const A = pts[(i - 1 + n) % n], P = pts[i], B = pts[(i + 1) % n];
+    const li = Math.hypot(P[0] - A[0], P[1] - A[1]), lo = Math.hypot(B[0] - P[0], B[1] - P[1]); if (li < 1 || lo < 1) continue;
+    const di = norm(P[0] - A[0], P[1] - A[1]), dO = norm(B[0] - P[0], B[1] - P[1]), dot = di[0] * dO[0] + di[1] * dO[1];
+    if (dot > 0.99) { cham.push(P); continue; }
+    const c = Math.min(dot < 0.2 ? W * 1.35 : W * 0.85, li * 0.45, lo * 0.45);
+    cham.push([P[0] - di[0] * c, P[1] - di[1] * c], [P[0] + dO[0] * c, P[1] + dO[1] * c]);
+  }
+  return { pts, cham, W };
+};
+RR.toWorld = p => [(p[0] + MARGIN - 1) * U, (p[1] + MARGIN - 1) * U];
+RR.toGrid = (x, y) => [x / U - MARGIN + 1, y / U - MARGIN + 1];
 RR.buildTrack = function (def, index) {
   const W = def.w, OFF = RR.FENCE_OFFSET;
   let maxX = 0, maxY = 0;
@@ -361,8 +444,23 @@ RR.buildTrack = function (def, index) {
   const RH = new Float32Array(N);
   for (let i = 0; i < N; i++) { const j = (i + 3) % N; RH[i] = Math.atan2(RX[j] - RX[i], -(RY[j] - RY[i])); }
 
-  const T = { def, index, W, OFF, width, height, pts, cham, corners, X, Y, S, H, N, L, RX, RY, RH, step };
+  const toW = p => [(p[0] + MARGIN - 1) * U, (p[1] + MARGIN - 1) * U, p[2]];
+  const items = {}; for (const k of ['treeAt', 'umbAt', 'coneAt', 'pickAt', 'lampAt']) if (def[k]) items[k] = def[k].map(toW);
+  const T = { def, index, W, OFF, width, height, pts, cham, corners, X, Y, S, H, N, L, RX, RY, RH, step, items };
   T.cuts = (def.cuts || []).map(cd => buildCut(T, cd));
+  // run-off width at every point of the road: as open as possible, but always leaving a rail between two parts of the
+  // track that pass close to each other, and inside the map (art revamp: more room before the barriers)
+  const R = new Float32Array(N), base = W / 2 + OFF, want = W / 2 + RR.RUNOFF, far = W * 3;
+  for (let i = 0; i < N; i++) {
+    let c = 1e9;
+    for (let j = 0; j < N; j += 2) { let ds = Math.abs(S[i] - S[j]); ds = Math.min(ds, L - ds); if (ds < far) continue; const d = Math.hypot(X[i] - X[j], Y[i] - Y[j]); if (d < c) c = d; }
+    const edge = Math.min(X[i], Y[i], width - X[i], height - Y[i]) - 30;
+    R[i] = Math.max(base, Math.min(want, c / 2 - 18, edge));
+  }
+  const ero = new Float32Array(N), K2 = 14;   // smooth: local minimum, then average (no bumps, never past the limit)
+  for (let i = 0; i < N; i++) { let mn = 1e9; for (let k = -K2; k <= K2; k++) mn = Math.min(mn, R[(i + k + N) % N]); ero[i] = mn; }
+  for (let i = 0; i < N; i++) { let s = 0; for (let k = -K2; k <= K2; k++) s += ero[(i + k + N) % N]; R[i] = Math.max(base, s / (2 * K2 + 1)); }
+  T.R = R;
   renderTrack(T);
   return T;
 };
@@ -415,124 +513,332 @@ function grassPattern(base, speck, speck2, seed) {
   return c;
 }
 
+// ---------- HD track renderer (art revamp, Nov 2026) ----------
+// The visible track is drawn at RR.HD x detail (2x on PC); the collision mask stays 1 px = 1 world unit.
+// Light comes from the top-left, so every shadow falls to the bottom-right.
+const SH_X = 5, SH_Y = 7;
+function hdPattern(v, size, paint, seed) {   // texture painted at HD resolution, scaled back to world units
+  const hd = RR.HD, c = RR.mk(size * hd, size * hd), x = c.getContext('2d'); x.scale(hd, hd);
+  paint(x, RR.rng(seed), size);
+  const p = v.createPattern(c, 'repeat'); if (p.setTransform) p.setTransform(new DOMMatrix([1 / hd, 0, 0, 1 / hd, 0, 0]));
+  return p;
+}
+function grassTex(base, lights, darks) {
+  return (x, r, s) => {
+    x.fillStyle = base; x.fillRect(0, 0, s, s);
+    for (let i = 0; i < s * s / 6; i++) {   // fine blade strokes, mostly pointing up, low contrast
+      const px = r() * s, py = r() * s, a = -Math.PI / 2 + (r() - 0.5) * 1.6, l = 0.8 + r() * 1.6;
+      x.strokeStyle = r() < 0.55 ? lights[(r() * lights.length) | 0] : darks[(r() * darks.length) | 0];
+      x.globalAlpha = 0.35 + r() * 0.35; x.lineWidth = 0.45 + r() * 0.4; x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); x.stroke();
+      if (px > s - 4 || py < 4) { x.beginPath(); x.moveTo(px - s, py); x.lineTo(px - s + Math.cos(a) * l, py + Math.sin(a) * l); x.moveTo(px, py + s); x.lineTo(px + Math.cos(a) * l, py + s + Math.sin(a) * l); x.stroke(); }
+    }
+  };
+}
+function asphaltTex(x, r, s) {
+  x.fillStyle = '#7f8286'; x.fillRect(0, 0, s, s);
+  for (let i = 0; i < s * s / 3; i++) {
+    const g = 100 + (r() * 60) | 0; x.fillStyle = `rgba(${g},${g},${g + 4},${0.25 + r() * 0.35})`;
+    x.fillRect(r() * s, r() * s, 0.5 + r() * 0.8, 0.5 + r() * 0.8);
+  }
+  for (let i = 0; i < s / 6; i++) { x.fillStyle = 'rgba(40,40,44,0.25)'; x.fillRect(r() * s, r() * s, 0.7, 0.7); }
+}
+function dirtTex(x, r, s) {
+  x.fillStyle = '#a5845a'; x.fillRect(0, 0, s, s);
+  for (let i = 0; i < s * s / 4; i++) { const t = r(); x.fillStyle = t < 0.4 ? 'rgba(120,90,55,0.5)' : t < 0.8 ? 'rgba(196,170,124,0.5)' : 'rgba(90,70,48,0.6)'; x.fillRect(r() * s, r() * s, 0.6 + r() * 1.4, 0.6 + r()); }
+}
+function sandTex(x, r, s) {
+  x.fillStyle = '#d4c094'; x.fillRect(0, 0, s, s);
+  for (let i = 0; i < s * s / 4; i++) { x.fillStyle = r() < 0.5 ? 'rgba(236,222,186,0.6)' : 'rgba(176,152,108,0.45)'; x.fillRect(r() * s, r() * s, 0.6, 0.6); }
+}
+// union of discs along the centreline = band of (varying) radius R around the road
+function bandPath(T, grow, every) {
+  const p = new Path2D(), e = every || 1;
+  for (let i = 0; i < T.N; i += e) { const r = T.R[i] + grow; if (r <= 0) continue; p.moveTo(T.X[i] + r, T.Y[i]); p.arc(T.X[i], T.Y[i], r, 0, Math.PI * 2); }
+  return p;
+}
+function polyPath(poly) { const p = new Path2D(); p.moveTo(poly[0][0], poly[0][1]); for (let i = 1; i < poly.length; i++) p.lineTo(poly[i][0], poly[i][1]); p.closePath(); return p; }
+
+// ---------------- Terrain themes (look only: off-road always drives like grass) ----------------
+function snowTex(base, spark) {
+  return (x, r, s) => {
+    x.fillStyle = base; x.fillRect(0, 0, s, s);
+    for (let i = 0; i < s * s / 5; i++) { const t = r(); x.fillStyle = t < 0.5 ? 'rgba(170,190,215,0.25)' : t < 0.9 ? 'rgba(255,255,255,0.6)' : spark; x.fillRect(r() * s, r() * s, 0.6 + r() * 0.9, 0.6 + r() * 0.7); }
+    x.strokeStyle = 'rgba(150,175,205,0.18)'; x.lineWidth = 0.8;
+    for (let i = 0; i < 3; i++) { const y = r() * s; x.beginPath(); x.moveTo(0, y); x.bezierCurveTo(s * 0.3, y - 3, s * 0.6, y + 3, s, y); x.stroke(); }
+  };
+}
+function duneTex(base, light, dark) {
+  return (x, r, s) => {
+    x.fillStyle = base; x.fillRect(0, 0, s, s);
+    for (let i = 0; i < s * s / 4; i++) { x.fillStyle = r() < 0.5 ? light : dark; x.fillRect(r() * s, r() * s, 0.6, 0.6); }
+    x.lineWidth = 0.9;
+    for (let k = 0; k < 5; k++) { const y = (k + r() * 0.5) * s / 5; x.strokeStyle = 'rgba(150,100,50,0.18)'; x.beginPath(); x.moveTo(0, y); for (let px = 0; px <= s; px += 4) x.lineTo(px, y + Math.sin(px / s * Math.PI * 2) * 1.5); x.stroke();
+      x.strokeStyle = 'rgba(255,240,200,0.22)'; x.beginPath(); x.moveTo(0, y + 1); for (let px = 0; px <= s; px += 4) x.lineTo(px, y + 1 + Math.sin(px / s * Math.PI * 2) * 1.5); x.stroke(); }
+  };
+}
+function leafLitter(base, lights, darks) {   // autumn grass with fallen leaves
+  const g = grassTex(base, lights, darks);
+  return (x, r, s) => { g(x, r, s); const L = ['#d8742a', '#e8a838', '#b8401c', '#c89a30']; for (let i = 0; i < s * s / 60; i++) { x.fillStyle = L[(r() * 4) | 0]; x.save(); x.translate(r() * s, r() * s); x.rotate(r() * 6.3); x.beginPath(); x.ellipse(0, 0, 1.3, 0.7, 0, 0, 7); x.fill(); x.restore(); } };
+}
+RR.THEMES = {
+  grass: { name: 'Grass', out: () => grassTex('#4a9233', ['#5fae44', '#6dbb50', '#57a33c'], ['#3d8029', '#447f2c']), inn: () => grassTex('#56a43b', ['#6dbd4f', '#7cc95c', '#64b247'], ['#4a9533', '#4f9a36']),
+    noise: ['20,50,10', '190,230,120'], stripes: ['rgba(30,70,20,0.10)', 'rgba(210,255,170,0.07)'], patch: 'sand', trap: 'sand', trees: 'leafy', tuft: [['#2f6e20', '#3b7f27', '#2a6420'], ['#7fc65a', '#9ad46c', '#6db84c']], tall: [['#2e6a20', '#3d7a28', '#4a7f2a'], ['#8cc05a', '#a9cf6c', '#c4d77a']],
+    puff: 'grass', mark: [38, 66, 20, 0.32], tread: false, weather: null, edge: null, shadow: 'rgba(10,30,5,0.42)' },
+  autumn: { name: 'Autumn', out: () => leafLitter('#6b7f2c', ['#87923a', '#9a9a44', '#7c8a34'], ['#5a6a24', '#4f5e20']), inn: () => grassTex('#748a30', ['#8c9c3c', '#9aa648', '#82943a'], ['#62762a', '#5a6e26']),
+    noise: ['60,40,10', '230,180,90'], stripes: ['rgba(60,50,10,0.10)', 'rgba(255,230,160,0.07)'], patch: 'leaves', trap: 'sand', trees: 'autumn', tuft: [['#6a5a22', '#7a6428', '#5e5020'], ['#d8a040', '#e8b850', '#c88a30']], tall: [['#6a5420', '#7a6026', '#5a4a1c'], ['#e0b050', '#f0c860', '#d09838']],
+    puff: 'grass', mark: [60, 50, 20, 0.32], tread: false, weather: 'leaves', edge: null, shadow: 'rgba(30,20,5,0.42)' },
+  snow: { name: 'Snow', out: () => snowTex('#e9eff6', 'rgba(200,230,255,0.9)'), inn: () => snowTex('#dde5ee', 'rgba(255,255,255,0.9)'),
+    noise: ['120,140,180', '255,255,255'], stripes: ['rgba(120,140,180,0.08)', 'rgba(255,255,255,0.10)'], patch: 'ice', trap: 'drift', trees: 'pine', tuft: [['#7a6a4a', '#8a7a58', '#6a5c40'], ['#ffffff', '#f2f6fb', '#e6eef6']], tall: [['#6e604a', '#7e6e52', '#5e5040'], ['#ffffff', '#eef4fa', '#dfe8f2']],
+    puff: 'snow', mark: [110, 128, 158, 0.45], tread: true, weather: 'snow', edge: 'rgba(255,255,255,0.75)', shadow: 'rgba(60,80,120,0.35)', tuftDense: 0.45 },
+  desert: { name: 'Desert', out: () => duneTex('#d9a864', 'rgba(250,220,160,0.5)', 'rgba(170,120,60,0.4)'), inn: () => duneTex('#e2b878', 'rgba(255,232,180,0.5)', 'rgba(180,130,70,0.35)'),
+    noise: ['150,90,40', '255,230,170'], stripes: null, patch: 'rocks', trap: 'gravel', trees: 'cactus', tuft: [['#9a8442', '#a89250', '#8a763a'], ['#e0cc80', '#ecd890', '#d4bc70']], tall: [['#8e7a40', '#9e8848', '#7e6c38'], ['#e8d488', '#f2e09a', '#dcc478']],
+    puff: 'dust', mark: [150, 105, 55, 0.35], tread: true, weather: 'sand', edge: 'rgba(225,185,120,0.55)', shadow: 'rgba(90,50,10,0.38)', tuftDense: 0.4 },
+  beach: { name: 'Beach', out: () => grassTex('#58a83a', ['#70c048', '#80cc58', '#66b442'], ['#4a9a30', '#52a034']), inn: () => duneTex('#ead2a0', 'rgba(255,245,215,0.6)', 'rgba(200,170,120,0.35)'),
+    noise: ['20,60,30', '200,240,140'], stripes: null, patch: 'water', trap: 'sand', trees: 'palm', tuft: [['#3a8a2a', '#46982e', '#347e26'], ['#8ed860', '#a0e070', '#7ccc52']], tall: [['#3a8028', '#468e2e', '#347424'], ['#9ad46a', '#b0de7a', '#88c85a']],
+    puff: 'dust', mark: [140, 115, 70, 0.33], tread: true, weather: null, edge: 'rgba(240,220,170,0.6)', shadow: 'rgba(10,40,20,0.40)', tuftDense: 0.6 },
+};
+RR.TIMES = { day: 'Day', sunset: 'Sunset', night: 'Night' };
+// ----- theme trees -----
+RR.makeTreeHD = function (r, seed, pal) {
+  pal = pal || ['#5cbf4e', '#2f8d3a', '#1b5f29', '#123f1d', 'rgba(170,235,120,0.45)', 'rgba(10,40,15,0.35)'];
+  const sc = 2, s = (r * 2 + 10) * sc, c = RR.mk(s, s), x = c.getContext('2d'), rnd = RR.rng(31 + seed * 7);
+  x.scale(sc, sc); const cx = r + 5, cy = r + 5, blobs = [];
+  for (let i = 0; i < 9; i++) { const a = rnd() * 6.28, d = rnd() * r * 0.45; blobs.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d, r * (0.42 + rnd() * 0.22)]); }
+  blobs.push([cx, cy, r * 0.62]);
+  x.fillStyle = pal[3]; blobs.forEach(b => { x.beginPath(); x.arc(b[0] + 1, b[1] + 1.5, b[2] + 1.2, 0, 7); x.fill(); });
+  blobs.sort((p, q) => (q[0] + q[1]) - (p[0] + p[1]));
+  for (const b of blobs) {
+    const g = x.createRadialGradient(b[0] - b[2] * 0.4, b[1] - b[2] * 0.45, b[2] * 0.1, b[0], b[1], b[2]);
+    g.addColorStop(0, pal[0]); g.addColorStop(0.45, pal[1]); g.addColorStop(1, pal[2]); x.fillStyle = g; x.beginPath(); x.arc(b[0], b[1], b[2], 0, 7); x.fill();
+  }
+  for (let i = 0; i < r * 9; i++) {
+    const a = rnd() * 6.28, d = Math.sqrt(rnd()) * r * 0.95, px = cx + Math.cos(a) * d, py = cy + Math.sin(a) * d, lit = (px - cx) + (py - cy) < -r * 0.2;
+    x.fillStyle = lit ? pal[4] : pal[5]; x.beginPath(); x.arc(px, py, 0.6 + rnd() * 1.1, 0, 7); x.fill();
+  }
+  c.r = r; c.ws = s / sc; return c;
+};
+RR.makePineHD = function (r, seed) {   // snowy fir seen from above: star-shaped layers, snow on the lit side
+  const sc = 2, s = (r * 2 + 10) * sc, c = RR.mk(s, s), x = c.getContext('2d'), rnd = RR.rng(57 + seed * 11);
+  x.scale(sc, sc); const cx = r + 5, cy = r + 5;
+  for (let L = 0; L < 4; L++) {
+    const rr = r * (1 - L * 0.22), n = 9 - L, rot = rnd() * 6.28;
+    x.beginPath();
+    for (let k = 0; k <= n * 2; k++) { const a = rot + k / (n * 2) * Math.PI * 2, d = k % 2 ? rr * 0.55 : rr; x.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d); }
+    const g = x.createRadialGradient(cx - rr * 0.3, cy - rr * 0.35, rr * 0.1, cx, cy, rr);
+    g.addColorStop(0, ['#3d7a4a', '#46875a', '#4f9464', '#5aa070'][L]); g.addColorStop(1, ['#163a24', '#1c442a', '#224e32', '#285838'][L]);
+    x.fillStyle = g; x.fill(); x.strokeStyle = 'rgba(10,30,18,0.6)'; x.lineWidth = 0.6; x.stroke();
+    x.fillStyle = 'rgba(255,255,255,0.85)';   // snow
+    for (let k = 0; k < n; k++) { const a = rot + k / n * Math.PI * 2; if (Math.cos(a - 3.9) < -0.1) continue; x.beginPath(); x.ellipse(cx + Math.cos(a) * rr * 0.72, cy + Math.sin(a) * rr * 0.72, rr * 0.18, rr * 0.1, a, 0, 7); x.fill(); }
+  }
+  x.fillStyle = '#fff'; x.beginPath(); x.arc(cx - 0.5, cy - 0.5, r * 0.12, 0, 7); x.fill();
+  c.r = r; c.ws = s / sc; return c;
+};
+RR.makeCactusHD = function (r, seed) {   // saguaro from above: ribbed body with arms
+  const sc = 2, s = (r * 2 + 10) * sc, c = RR.mk(s, s), x = c.getContext('2d'), rnd = RR.rng(91 + seed * 13);
+  x.scale(sc, sc); const cx = r + 5, cy = r + 5;
+  const blob = (px, py, rr) => {
+    const g = x.createRadialGradient(px - rr * 0.35, py - rr * 0.4, rr * 0.1, px, py, rr); g.addColorStop(0, '#7fb35a'); g.addColorStop(0.6, '#4d8a3a'); g.addColorStop(1, '#2f5e26');
+    x.fillStyle = '#244a1e'; x.beginPath(); x.arc(px + 0.6, py + 0.8, rr + 0.8, 0, 7); x.fill();
+    x.fillStyle = g; x.beginPath(); x.arc(px, py, rr, 0, 7); x.fill();
+    x.strokeStyle = 'rgba(20,50,15,0.45)'; x.lineWidth = 0.5; for (let k = 0; k < 8; k++) { const a = k / 8 * 6.28; x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * rr, py + Math.sin(a) * rr); x.stroke(); }
+    x.fillStyle = 'rgba(255,250,220,0.8)'; for (let k = 0; k < 8; k++) { const a = k / 8 * 6.28 + 0.3; x.fillRect(px + Math.cos(a) * rr * 0.7, py + Math.sin(a) * rr * 0.7, 0.5, 0.5); }
+  };
+  const arms = 1 + ((rnd() * 3) | 0);
+  for (let k = 0; k < arms; k++) { const a = rnd() * 6.28, d = r * (0.45 + rnd() * 0.3); x.strokeStyle = '#3d7430'; x.lineWidth = r * 0.28; x.lineCap = 'round'; x.beginPath(); x.moveTo(cx, cy); x.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d); x.stroke(); blob(cx + Math.cos(a) * d, cy + Math.sin(a) * d, r * 0.2); }
+  blob(cx, cy, r * 0.32);
+  x.fillStyle = '#f4d04a'; x.beginPath(); x.arc(cx - 1, cy - 1, 1, 0, 7); x.fill();
+  c.r = r * 0.6; c.ws = s / sc; return c;
+};
+RR.makeRockHD = function (r, seed) {
+  const sc = 2, s = (r * 2 + 10) * sc, c = RR.mk(s, s), x = c.getContext('2d'), rnd = RR.rng(13 + seed * 5);
+  x.scale(sc, sc); const cx = r + 5, cy = r + 5;
+  for (let i = 0; i < 3; i++) {
+    const px = cx + (rnd() - 0.5) * r * 0.8, py = cy + (rnd() - 0.5) * r * 0.8, rr = r * (0.35 + rnd() * 0.35);
+    x.beginPath(); for (let k = 0; k < 9; k++) { const a = k / 9 * 6.28, d = rr * (0.75 + rnd() * 0.3); x.lineTo(px + Math.cos(a) * d, py + Math.sin(a) * d); } x.closePath();
+    const g = x.createLinearGradient(px - rr, py - rr, px + rr, py + rr); g.addColorStop(0, '#d8b48a'); g.addColorStop(0.5, '#a8805a'); g.addColorStop(1, '#6e4c32');
+    x.fillStyle = g; x.fill(); x.strokeStyle = 'rgba(60,35,20,0.6)'; x.lineWidth = 0.6; x.stroke();
+  }
+  c.r = r; c.ws = s / sc; return c;
+};
+RR.makePalmHD = function (r, seed) {
+  const sc = 2, s = (r * 2 + 10) * sc, c = RR.mk(s, s), x = c.getContext('2d'), rnd = RR.rng(73 + seed * 17);
+  x.scale(sc, sc); const cx = r + 5, cy = r + 5, n = 7 + ((rnd() * 3) | 0);
+  for (let k = 0; k < n; k++) {
+    const a = k / n * 6.28 + rnd() * 0.4, L = r * (0.8 + rnd() * 0.2), ex = cx + Math.cos(a) * L, ey = cy + Math.sin(a) * L, nx = -Math.sin(a), ny = Math.cos(a);
+    x.fillStyle = '#1f5a24'; x.beginPath(); x.moveTo(cx, cy); x.quadraticCurveTo(cx + Math.cos(a) * L * 0.5 + nx * L * 0.22 + 1, cy + Math.sin(a) * L * 0.5 + ny * L * 0.22 + 1.5, ex + 1, ey + 1.5); x.quadraticCurveTo(cx + Math.cos(a) * L * 0.5 - nx * L * 0.22 + 1, cy + Math.sin(a) * L * 0.5 - ny * L * 0.22 + 1.5, cx, cy); x.fill();
+    const g = x.createLinearGradient(cx, cy, ex, ey); g.addColorStop(0, '#2f8a34'); g.addColorStop(1, Math.cos(a - 3.9) > 0 ? '#8ad45a' : '#4ea040');
+    x.fillStyle = g; x.beginPath(); x.moveTo(cx, cy); x.quadraticCurveTo(cx + Math.cos(a) * L * 0.5 + nx * L * 0.2, cy + Math.sin(a) * L * 0.5 + ny * L * 0.2, ex, ey); x.quadraticCurveTo(cx + Math.cos(a) * L * 0.5 - nx * L * 0.2, cy + Math.sin(a) * L * 0.5 - ny * L * 0.2, cx, cy); x.fill();
+    x.strokeStyle = 'rgba(20,60,20,0.6)'; x.lineWidth = 0.4; x.beginPath(); x.moveTo(cx, cy); x.lineTo(ex, ey); x.stroke();
+  }
+  x.fillStyle = '#7a5a32'; x.beginPath(); x.arc(cx, cy, r * 0.13, 0, 7); x.fill();
+  x.fillStyle = '#5a3a1a'; for (let k = 0; k < 3; k++) { x.beginPath(); x.arc(cx + Math.cos(k * 2.1) * r * 0.12, cy + Math.sin(k * 2.1) * r * 0.12, r * 0.07, 0, 7); x.fill(); }
+  c.r = r; c.ws = s / sc; return c;
+};
+const AUTUMN_PALS = [['#f0a03a', '#d0621e', '#8a3412', '#5a240c', 'rgba(255,220,120,0.5)', 'rgba(80,20,5,0.35)'], ['#f8d050', '#d8a024', '#8a6010', '#5a400a', 'rgba(255,240,150,0.5)', 'rgba(80,50,5,0.35)'],
+  ['#e8603a', '#b8301c', '#701810', '#4a100a', 'rgba(255,170,120,0.45)', 'rgba(60,10,5,0.35)']];
+RR.themeTrees = function (kind) {
+  if (kind === 'pine') return [RR.makePineHD(28, 1), RR.makePineHD(22, 2), RR.makePineHD(25, 3)];
+  if (kind === 'cactus') return [RR.makeCactusHD(22, 1), RR.makeCactusHD(18, 2), RR.makeRockHD(16, 3), RR.makeRockHD(12, 4)];
+  if (kind === 'palm') return [RR.makePalmHD(28, 1), RR.makePalmHD(24, 2), RR.makePalmHD(26, 3)];
+  if (kind === 'autumn') return [RR.makeTreeHD(30, 1, AUTUMN_PALS[0]), RR.makeTreeHD(24, 2, AUTUMN_PALS[1]), RR.makeTreeHD(27, 3, AUTUMN_PALS[2]), RR.makeTreeHD(26, 4)];
+  return [RR.makeTreeHD(30, 1), RR.makeTreeHD(24, 2), RR.makeTreeHD(27, 3)];
+};
+// ground features out in the fields
+function themePatch(v, kind, px, py, r, rnd, pats) {
+  if (kind === 'sand') return softBlob(v, px, py, r, pats.sand, rnd);
+  if (kind === 'leaves') return softBlob(v, px, py, r, pats.leaves, rnd);
+  if (kind === 'ice') {
+    v.save(); v.shadowColor = 'rgba(120,150,190,0.5)'; v.shadowBlur = 3 * RR.HD; const g = v.createLinearGradient(px - r, py - r, px + r, py + r);
+    g.addColorStop(0, '#d8eefa'); g.addColorStop(0.5, '#a8cfe8'); g.addColorStop(1, '#8ab8d8'); v.fillStyle = g; v.beginPath(); v.ellipse(px, py, r, r * 0.7, rnd() * 3, 0, 7); v.fill(); v.restore();
+    v.strokeStyle = 'rgba(255,255,255,0.6)'; v.lineWidth = 0.8; for (let k = 0; k < 4; k++) { v.beginPath(); v.moveTo(px + (rnd() - 0.5) * r, py + (rnd() - 0.5) * r * 0.6); v.lineTo(px + (rnd() - 0.5) * r, py + (rnd() - 0.5) * r * 0.6); v.stroke(); }
+    return;
+  }
+  if (kind === 'water') {
+    v.save(); v.fillStyle = pats.sand; v.beginPath(); v.ellipse(px, py, r + 7, (r + 7) * 0.75, 0, 0, 7); v.fill();
+    const g = v.createRadialGradient(px - r * 0.3, py - r * 0.3, 0, px, py, r); g.addColorStop(0, '#5fd0e8'); g.addColorStop(0.6, '#2a9ac8'); g.addColorStop(1, '#1a6ea0');
+    v.fillStyle = g; v.beginPath(); v.ellipse(px, py, r, r * 0.75, 0, 0, 7); v.fill();
+    v.strokeStyle = 'rgba(255,255,255,0.5)'; v.lineWidth = 0.8; v.beginPath(); v.ellipse(px, py, r - 1.5, r * 0.75 - 1.5, 0, 0, 7); v.stroke(); v.restore();
+    return;
+  }
+  if (kind === 'rocks') { for (let k = 0; k < 3; k++) { const rk = RR.makeRockHD(5 + rnd() * 6, (rnd() * 100) | 0), sx = px + (rnd() - 0.5) * r, sy = py + (rnd() - 0.5) * r;
+    v.save(); v.fillStyle = 'rgba(90,50,10,0.3)'; v.beginPath(); v.ellipse(sx + 3, sy + 4, rk.r, rk.r * 0.8, 0, 0, 7); v.fill(); v.drawImage(rk, sx - rk.ws / 2, sy - rk.ws / 2, rk.ws, rk.ws); v.restore(); } }
+}
+
 function renderTrack(T) {
-  const { width, height, W, OFF, cham, corners } = T;
+  const { width, height, W, cham, corners } = T, hd = RR.HD;
   const rnd = RR.rng(1234 + T.index * 977);
-  const vis = RR.mk(width, height), v = vis.getContext('2d');
+  const vis = RR.mk(Math.round(width * hd), Math.round(height * hd)), v = vis.getContext('2d'); v.scale(hd, hd);
   const mask = RR.mk(width, height), m = mask.getContext('2d');
-  const gOut = v.createPattern(grassPattern('#4f9c36', '#6cbc4c', '#3f8a2a', 7), 'repeat');
-  const gIn = v.createPattern(grassPattern('#58a83c', '#78c858', '#4a9632', 9), 'repeat');
+  const TH = RR.THEMES[T.def.theme] || RR.THEMES.grass; T.theme = TH; T.time = T.def.time || 'day';
+  const gOut = hdPattern(v, 48, TH.out(), 7 + T.index), gIn = hdPattern(v, 48, TH.inn(), 9 + T.index);
+  const asph = hdPattern(v, 40, asphaltTex, 3), dirtP = hdPattern(v, 40, dirtTex, 5), sandP = hdPattern(v, 40, sandTex, 6);
+  const trapP = TH.trap === 'drift' ? hdPattern(v, 40, snowTex('#f6f9fc', 'rgba(255,255,255,1)'), 8) : TH.trap === 'gravel' ? hdPattern(v, 40, dirtTex, 11) : sandP;
+  const pats = { sand: sandP, leaves: hdPattern(v, 48, leafLitter('#7c6a30', ['#a07a34', '#b08a3a'], ['#5a4a20', '#6a5424']), 12) };
+
+  // ground: textured grass with big soft light/dark patches
   v.fillStyle = gOut; v.fillRect(0, 0, width, height);
+  const nz = RR.mk(Math.ceil(width / 40) + 2, Math.ceil(height / 40) + 2), nx = nz.getContext('2d');
+  for (let y = 0; y < nz.height; y++) for (let x = 0; x < nz.width; x++) { const t = rnd(); nx.fillStyle = t < 0.5 ? `rgba(${TH.noise[0]},${t * 0.32})` : `rgba(${TH.noise[1]},${(t - 0.5) * 0.22})`; nx.fillRect(x, y, 1, 1); }
+  v.save(); v.imageSmoothingEnabled = true; v.imageSmoothingQuality = 'high'; v.drawImage(nz, -40, -40, nz.width * 40, nz.height * 40); v.restore();
 
-  // infield/outfield sand patches (decorative, behind fences) [observed]
-  const DW = W + 2 * OFF;
-  // drivable footprint canvas
-  const drive = RR.mk(width, height), dx = drive.getContext('2d');
-  strokePoly(dx, cham, DW, '#fff');
-  const dimg = dx.getImageData(0, 0, width, height).data;
-  const drivable = (x, y) => { x |= 0; y |= 0; if (x < 0 || y < 0 || x >= width || y >= height) return false; return dimg[(y * width + x) * 4 + 3] > 128; };
-
+  // the drivable band (road + run-off), 1x copy for placement tests
+  const band = bandPath(T, 0), bandC = RR.mk(width, height), bx = bandC.getContext('2d');
+  bx.fillStyle = '#fff'; bx.fill(band);
+  const bimg = bx.getImageData(0, 0, width, height).data;
+  const drivable = (x, y) => { x |= 0; y |= 0; if (x < 0 || y < 0 || x >= width || y >= height) return false; return bimg[(y * width + x) * 4 + 3] > 128; };
+  // decorative sand/gravel patches out in the fields
   for (let i = 0; i < 4 + T.index % 4; i++) {
     for (let tries = 0; tries < 40; tries++) {
-      const px = rnd() * width, py = rnd() * height;
-      if (drivable(px, py) || drivable(px + 40, py) || drivable(px - 40, py) || drivable(px, py + 40) || drivable(px, py - 40)) continue;
-      blob(v, px, py, 22 + rnd() * 30, '#c8b48a', '#b09a6e', rnd); break;
+      const px = rnd() * width, py = rnd() * height, r = 22 + rnd() * 30;
+      if (drivable(px, py) || drivable(px + r + 20, py) || drivable(px - r - 20, py) || drivable(px, py + r + 20) || drivable(px, py - r - 20)) continue;
+      themePatch(v, TH.patch, px, py, r, rnd, pats); break;
     }
   }
-  // fence pipe ring then drivable grass band
-  strokePoly(v, cham, DW + 6, '#d8d8d8'); strokeCuts(T, v, CUT_BAND + 6, '#d8d8d8');
-  strokePoly(v, cham, DW + 2, '#f2f2f2'); strokeCuts(T, v, CUT_BAND + 2, '#f2f2f2');
-  strokePoly(v, cham, DW, gIn); strokeCuts(T, v, CUT_BAND, gIn);
-  strokePoly(m, cham, DW, 'rgb(0,255,0)'); strokeCuts(T, m, CUT_BAND, 'rgb(0,255,0)');
+  // fence: soft cast shadow, then a steel guard rail (dark edge, bright top, mid tone)
+  v.save(); v.shadowColor = 'rgba(0,0,0,0.45)'; v.shadowBlur = 6 * hd; v.shadowOffsetX = 3 * hd; v.shadowOffsetY = 4 * hd;
+  v.fillStyle = '#5c6368'; v.fill(bandPath(T, 5)); v.restore();
+  v.fillStyle = '#5c6368'; v.fill(bandPath(T, 5));
+  v.fillStyle = '#eef1f4'; v.fill(bandPath(T, 3.6));
+  v.fillStyle = '#b4bcc3'; v.fill(bandPath(T, 2));
+  strokeCuts(T, v, CUT_BAND + 10, '#5c6368'); strokeCuts(T, v, CUT_BAND + 7, '#eef1f4'); strokeCuts(T, v, CUT_BAND + 4, '#b4bcc3');
+  // run-off grass with mown stripes that follow the band
+  v.fillStyle = gIn; v.fill(band); strokeCuts(T, v, CUT_BAND, gIn);
+  for (let j = 1; ; j++) {
+    const grow = -j * 13; if (!TH.stripes || T.R.every(r => r + grow < W / 2)) break;
+    v.fillStyle = TH.stripes[j % 2 ? 0 : 1]; v.fill(bandPath(T, grow, 2));
+  }
+  // collision mask: run-off = green, sand = red, road/kerb = blue, dirt = yellow
+  m.fillStyle = 'rgb(0,255,0)'; m.fill(band); strokeCuts(T, m, CUT_BAND, 'rgb(0,255,0)');
 
-  // sand traps at outside of sharp corners, clipped to drivable band [inferred placement]
-  const sand = RR.mk(width, height), sx = sand.getContext('2d');
-  let anySand = false;
+  // sand traps on the outside of sharp corners (kept inside the run-off)
+  const traps = [];
   for (const c of corners) {
     if (!c.sharp || rnd() < 0.35) continue;
-    anySand = true;
-    const ox = (c.di[0] - c.dO[0]), oy = (c.di[1] - c.dO[1]); const on = norm(ox, oy);
-    const cx = c.P[0] + on[0] * (W * 0.5 + OFF * 0.2), cy = c.P[1] + on[1] * (W * 0.5 + OFF * 0.2);
-    blob(sx, cx, cy, W * 0.5, '#d2be92', '#bca676', rnd);
+    const on = norm(c.di[0] - c.dO[0], c.di[1] - c.dO[1]);
+    traps.push([c.P[0] + on[0] * (W * 0.5 + 10), c.P[1] + on[1] * (W * 0.5 + 10), Math.atan2(on[1], on[0])]);
   }
-  if (anySand) {
-    sx.globalCompositeOperation = 'destination-in'; sx.drawImage(drive, 0, 0);
-    v.drawImage(sand, 0, 0);
-    // mask: sand as red channel
-    const sm = RR.mk(width, height), smx = sm.getContext('2d');
-    smx.drawImage(sand, 0, 0); smx.globalCompositeOperation = 'source-in'; smx.fillStyle = 'rgb(255,0,0)'; smx.fillRect(0, 0, width, height);
-    m.drawImage(sm, 0, 0);
+  if (traps.length) {
+    const trapPath = new Path2D(); traps.forEach(t => { trapPath.moveTo(t[0] + W * 0.62 * Math.cos(t[2]), t[1] + W * 0.62 * Math.sin(t[2])); trapPath.ellipse(t[0], t[1], W * 0.62, W * 0.52, t[2], 0, Math.PI * 2); });
+    m.save(); m.clip(band); m.fillStyle = 'rgb(255,0,0)'; m.fill(trapPath); m.restore();
+    v.save(); v.clip(band); v.shadowColor = TH.trap === 'drift' ? 'rgba(110,140,180,0.6)' : 'rgba(90,70,30,0.6)'; v.shadowBlur = 3 * hd; v.fillStyle = TH.trap === 'drift' ? '#b8c8dc' : '#9c8a5e'; v.fill(trapPath); v.restore();
+    v.save(); v.clip(band); v.fillStyle = trapP; v.translate(0.6, 0.8);
+    traps.forEach(t => { v.beginPath(); v.ellipse(t[0] - 0.6, t[1] - 0.8, W * 0.62 - 1.2, W * 0.52 - 1.2, t[2], 0, Math.PI * 2); v.fill(); }); v.restore();
   }
 
-  // road edge line, kerbs, road [observed]
-  // shortcuts are dirt lanes (own surface, a little slower) drawn under the main road so the track's white edge line
-  // runs across each lane mouth: the regular route always reads as the main road (playtest 14)
-  strokeCuts(T, v, 4, '#6b5332'); strokeCuts(T, v, 0, '#a8875a');
+  // shortcuts: dirt lanes with ruts, under the main road
+  strokeCuts(T, v, 5, '#6b5332'); strokeCuts(T, v, 0, dirtP);
   for (const k of T.cuts) {
-    const dr = RR.rng(77 + T.index * 31);
-    v.save(); v.lineCap = 'butt'; v.lineWidth = k.CW; v.beginPath(); k.P.forEach((p, i) => i ? v.lineTo(p[0], p[1]) : v.moveTo(p[0], p[1]));
-    v.strokeStyle = 'rgba(0,0,0,0)'; v.stroke();
-    for (let i = 0; i < k.X.length; i += 2) for (let n = 0; n < 3; n++) {
-      const h = k.H[i], off = (dr() - 0.5) * (k.CW - 6);
-      v.fillStyle = dr() < 0.5 ? 'rgba(80,58,30,0.45)' : 'rgba(196,170,120,0.5)';
-      v.fillRect(k.X[i] + Math.cos(h) * off + (dr() - 0.5) * 6, k.Y[i] + Math.sin(h) * off + (dr() - 0.5) * 6, 2 + dr() * 2, 2);
+    v.save(); v.lineCap = 'round';
+    for (const sd of [-0.22, 0.22]) {
+      v.strokeStyle = 'rgba(80,58,30,0.35)'; v.lineWidth = 4;
+      v.beginPath(); k.X.forEach((x, i) => { const h = k.H[i]; v.lineTo(x + Math.cos(h) * sd * k.CW, k.Y[i] + Math.sin(h) * sd * k.CW); }); v.stroke();
+      v.strokeStyle = 'rgba(220,196,150,0.25)'; v.lineWidth = 1.2; v.stroke();
     }
-    // tyre ruts
-    v.strokeStyle = 'rgba(90,66,36,0.35)'; v.lineWidth = 3;
-    for (const sd of [-0.22, 0.22]) { v.beginPath(); k.X.forEach((x, i) => { const h = k.H[i]; v.lineTo(x + Math.cos(h) * sd * k.CW, k.Y[i] + Math.sin(h) * sd * k.CW); }); v.stroke(); }
     v.restore();
   }
   strokeCuts(T, m, 4, 'rgb(255,255,0)');
-  strokePoly(v, cham, W + 3, '#f0f0f0');
+
+  // road: ambient-occlusion shadow on the grass, white edge line, kerbs, asphalt
+  const road = polyPath(cham);
+  v.save(); v.lineJoin = 'miter'; v.miterLimit = 3;
+  v.shadowColor = 'rgba(0,0,0,0.35)'; v.shadowBlur = 5 * hd; v.lineWidth = W + 6; v.strokeStyle = 'rgba(40,50,30,0.35)'; v.stroke(road);
+  v.restore();
+  strokePoly(v, cham, W + 3, '#f4f4f2');
   strokePoly(m, cham, W + 3, 'rgb(0,0,255)');
   for (const c of corners) {
     if (!c.sharp && rnd() < 0.5) continue;
     const ext = c.sharp ? W * 0.45 : W * 0.3;
     const path = [[c.a[0] - c.di[0] * ext, c.a[1] - c.di[1] * ext], c.a, c.b, [c.b[0] + c.dO[0] * ext, c.b[1] + c.dO[1] * ext]];
-    for (const pass of [['#f2f2f2', []], ['#de1c1c', [7, 7]]]) {
-      v.save(); v.lineJoin = 'miter'; v.lineWidth = W + 12; v.strokeStyle = pass[0]; v.setLineDash(pass[1]);
-      v.beginPath(); v.moveTo(path[0][0], path[0][1]); for (let i = 1; i < 4; i++) v.lineTo(path[i][0], path[i][1]); v.stroke(); v.restore();
-    }
-    m.save(); m.lineJoin = 'miter'; m.lineWidth = W + 12; m.strokeStyle = 'rgb(0,0,255)';
-    m.beginPath(); m.moveTo(path[0][0], path[0][1]); for (let i = 1; i < 4; i++) m.lineTo(path[i][0], path[i][1]); m.stroke(); m.restore();
+    const stroke = (x, w, col, dash) => { x.save(); x.lineJoin = 'miter'; x.lineWidth = w; x.strokeStyle = col; x.setLineDash(dash || []); x.beginPath(); x.moveTo(path[0][0], path[0][1]); for (let i = 1; i < 4; i++) x.lineTo(path[i][0], path[i][1]); x.stroke(); x.restore(); };
+    v.save(); v.shadowColor = 'rgba(0,0,0,0.35)'; v.shadowBlur = 2 * hd; v.shadowOffsetX = 0.6 * hd; v.shadowOffsetY = 1 * hd; stroke(v, W + 13, '#f2f2f0'); v.restore();
+    stroke(v, W + 12, '#d61f1f', [7, 7]);
+    stroke(v, W + 9, 'rgba(255,255,255,0.18)');   // top highlight on the raised kerb
+    stroke(m, W + 12, 'rgb(0,0,255)');
   }
-  strokePoly(v, cham, W, '#8c8c8c');
-  // shortcut arrows painted on the ground: one where the lane starts, one where it rejoins the track
-  const groundArrow = (cx, cy, h, a) => {
-    const d = [Math.sin(h), -Math.cos(h)], nx = -d[1], ny = d[0];
-    const P = (f, s) => [cx + d[0] * f + nx * s, cy + d[1] * f + ny * s];
-    const pts = [P(-a * 1.6, -a * 0.45), P(0, -a * 0.45), P(0, -a), P(a * 1.2, 0), P(0, a), P(0, a * 0.45), P(-a * 1.6, a * 0.45)];
-    v.save(); v.fillStyle = 'rgba(70,70,70,0.38)';   // grey, like the painted direction arrows (a little stronger)
-    v.beginPath(); pts.forEach(p => v.lineTo(p[0], p[1])); v.closePath(); v.fill(); v.restore();
+  v.save(); v.lineJoin = 'miter'; v.miterLimit = 3; v.lineWidth = W; v.strokeStyle = asph; v.stroke(road); v.restore();
+  // rubbered-in racing line, repair patches, darker edges
+  v.save(); v.globalAlpha = 0.22; v.lineJoin = 'round'; v.lineCap = 'round'; v.strokeStyle = '#2c2d30'; v.lineWidth = W * 0.3; v.filter = 'blur(' + (6 * hd) + 'px)';
+  v.beginPath(); for (let i = 0; i <= T.N; i++) v.lineTo(T.RX[i % T.N], T.RY[i % T.N]); v.stroke(); v.restore();
+  for (let i = 0; i < 6 + T.index; i++) {
+    const s = (rnd() * T.N) | 0, h = T.H[s], off = (rnd() - 0.5) * (W - 30);
+    v.save(); v.translate(T.X[s] + Math.cos(h) * off, T.Y[s] + Math.sin(h) * off); v.rotate(h);
+    v.fillStyle = 'rgba(60,62,66,0.35)'; v.fillRect(-8 - rnd() * 8, -6 - rnd() * 10, 14 + rnd() * 14, 10 + rnd() * 16); v.restore();
+  }
+  for (const side of [-1, 1]) {   // soft darkening along both asphalt edges
+    v.save(); v.strokeStyle = 'rgba(0,0,0,0.14)'; v.lineWidth = 6; v.lineJoin = 'round'; v.beginPath();
+    for (let i = 0; i <= T.N; i++) { const j = i % T.N, h = T.H[j], d = (W / 2 - 3) * side; v.lineTo(T.X[j] + Math.cos(h) * d, T.Y[j] + Math.sin(h) * d); }
+    v.stroke(); v.restore();
+  }
+  if (TH.edge) for (const side of [-1, 1]) {
+    v.save(); v.strokeStyle = TH.edge; v.lineWidth = 7; v.lineJoin = 'round'; v.filter = 'blur(' + (2.5 * hd) + 'px)'; v.beginPath();
+    for (let i = 0; i <= T.N; i++) { const j = i % T.N, h = T.H[j], d = (W / 2 + 1 + Math.sin(i * 0.37) * 2.5) * side; v.lineTo(T.X[j] + Math.cos(h) * d, T.Y[j] + Math.sin(h) * d); }
+    v.stroke(); v.restore();
+  }
+  // painted direction arrows (shortcut arrows + long straights)
+  const arrow = (cx, cy, d, a, col) => {
+    const nx = -d[1], ny = d[0], P = (f, s) => [cx + d[0] * f + nx * s, cy + d[1] * f + ny * s];
+    v.fillStyle = col; v.beginPath();
+    [P(-a * 1.6, -a * 0.45), P(0, -a * 0.45), P(0, -a), P(a * 1.2, 0), P(0, a), P(0, a * 0.45), P(-a * 1.6, a * 0.45)].forEach(p => v.lineTo(p[0], p[1])); v.closePath(); v.fill();
   };
   for (const k of T.cuts) {
     const a = Math.min(k.CW * 0.26, 18);
     const s0 = Math.min(k.L * 0.35, T.W * 0.5 + a * 2.2), p0 = cutAt(k, s0);
-    groundArrow(p0[0], p0[1], p0[2], a);                                      // start: points into the shortcut
+    arrow(p0[0], p0[1], [Math.sin(p0[2]), -Math.cos(p0[2])], a, 'rgba(70,70,70,0.38)');
     const j = (k.b + Math.round((a * 2.6) / T.step)) % T.N;
-    groundArrow(T.X[j], T.Y[j], T.H[j], a);                                    // end: points back along the track
+    arrow(T.X[j], T.Y[j], [Math.sin(T.H[j]), -Math.cos(T.H[j])], a, 'rgba(70,70,70,0.38)');
   }
-
-  // painted direction arrows on long straights [observed dark arrow]
-  v.fillStyle = 'rgba(70,70,70,0.22)';
   for (let i = 0; i < cham.length; i++) {
     const p = cham[i], q = cham[(i + 1) % cham.length], len = Math.hypot(q[0] - p[0], q[1] - p[1]);
     if (len < 700 || i === 0) continue;
-    const d = norm(q[0] - p[0], q[1] - p[1]), nx = -d[1], ny = d[0];
-    const cx = p[0] + d[0] * len * 0.3, cy = p[1] + d[1] * len * 0.3, a = W * 0.22;
-    v.beginPath();
-    const P = (f, s) => [cx + d[0] * f + nx * s, cy + d[1] * f + ny * s];
-    [P(-a * 1.6, -a * 0.45), P(0, -a * 0.45), P(0, -a), P(a * 1.2, 0), P(0, a), P(0, a * 0.45), P(-a * 1.6, a * 0.45)].forEach(pt => v.lineTo(pt[0], pt[1]));
-    v.fill();
+    const d = norm(q[0] - p[0], q[1] - p[1]);
+    arrow(p[0] + d[0] * len * 0.3, p[1] + d[1] * len * 0.3, d, W * 0.22, 'rgba(235,235,230,0.16)');
   }
-
-  // start/finish line + grid boxes [grid boxes observed; chequer inferred]
+  // start/finish chequers + grid boxes
   const h0 = T.H[0], fx = Math.sin(h0), fy = -Math.cos(h0), rx = Math.cos(h0), ry = Math.sin(h0);
   const sx0 = T.X[0], sy0 = T.Y[0];
   for (let k = -W / 2; k < W / 2; k += 4) for (let r = 0; r < 2; r++) {
-    v.fillStyle = ((Math.floor((k + W / 2) / 4) + r) % 2) ? '#f0f0f0' : '#202020';
-    const px = sx0 + rx * k + fx * (r * 4), py = sy0 + ry * k + fy * (r * 4);
-    v.save(); v.translate(px, py); v.rotate(h0); v.fillRect(0, -4, 4, 4); v.restore();
+    v.fillStyle = ((Math.floor((k + W / 2) / 4) + r) % 2) ? '#f0f0ee' : '#1e1e20';
+    v.save(); v.translate(sx0 + rx * k + fx * (r * 4), sy0 + ry * k + fy * (r * 4)); v.rotate(h0); v.fillRect(0, -4, 4, 4); v.restore();
   }
   T.grid = [];
   for (let k = 0; k < RR.NUM_CARS; k++) {
@@ -540,7 +846,7 @@ function renderTrack(T) {
     const gx = sx0 - fx * back + rx * lat, gy = sy0 - fy * back + ry * lat;
     T.grid.push({ x: gx, y: gy, a: h0 });
     v.save(); v.translate(gx, gy); v.rotate(h0);
-    v.fillStyle = 'rgba(60,60,60,0.28)'; v.fillRect(-15, -17, 30, 36);
+    v.strokeStyle = 'rgba(240,240,236,0.55)'; v.lineWidth = 1.4; v.beginPath(); v.moveTo(-15, 19); v.lineTo(-15, -17); v.lineTo(15, -17); v.lineTo(15, 19); v.stroke();
     RR.pixText(v, String(k + 1), -2, -27, 1, 'rgba(235,235,235,0.75)');
     v.restore();
   }
@@ -551,62 +857,169 @@ function renderTrack(T) {
   for (let i = 0, j = 0; i < surf.length; i++, j += 4) {
     if (md[j + 3] < 128) surf[i] = 255;
     else if (md[j + 2] > 128) surf[i] = 1;
-    else if (md[j] > 128 && md[j + 1] > 128) surf[i] = 3;   // dirt (shortcut lanes)
+    else if (md[j] > 128 && md[j + 1] > 128) surf[i] = 3;
     else if (md[j] > 128) surf[i] = 2;
     else surf[i] = 0;
   }
   T.surf = surf;
   const wall = (x, y) => { x |= 0; y |= 0; return x < 0 || y < 0 || x >= width || y >= height || surf[y * width + x] === 255; };
 
-  // fence posts along fence lines [observed black posts]
-  v.fillStyle = '#1a1a1a';
-  for (let i = 0; i < T.N; i += 3) {
+  // rail posts with little shadows
+  for (let i = 0; i < T.N; i += 4) {
     const h = T.H[i], nx = Math.cos(h), ny = Math.sin(h);
     for (const side of [-1, 1]) {
-      const d = W / 2 + OFF + 2;
-      const px = T.X[i] + nx * d * side, py = T.Y[i] + ny * d * side;
-      if (wall(px + nx * side * 2, py + ny * side * 2) && !wall(px - nx * side * 5, py - ny * side * 5) && (i % 3 === 0)) {
-        v.fillRect(Math.round(px + nx * side * 1) - 1, Math.round(py + ny * side * 1) - 1, 2, 2);
-      }
+      const d = T.R[i] + 4, px = T.X[i] + nx * d * side, py = T.Y[i] + ny * d * side;
+      if (!wall(px + nx * side * 3, py + ny * side * 3) || wall(px - nx * side * 7, py - ny * side * 7)) continue;
+      v.fillStyle = 'rgba(0,0,0,0.3)'; v.fillRect(px + 0.5, py + 0.8, 2.4, 2.4);
+      v.fillStyle = '#2b2f33'; v.fillRect(px - 1.2, py - 1.2, 2.4, 2.4); v.fillStyle = '#8a9299'; v.fillRect(px - 1.2, py - 1.2, 1.2, 1.2);
     }
   }
-  // spectators near fences outside [observed]
+  // spectators behind the rail
   T.decor = [];
   let spect = 0;
-  for (let tries = 0; tries < 4000 && spect < 26; tries++) {
-    const i = (rnd() * T.N) | 0, h = T.H[i], side = rnd() < 0.5 ? -1 : 1, d = W / 2 + OFF + 10 + rnd() * 6;
+  for (let tries = 0; tries < 5000 && spect < 30; tries++) {
+    const i = (rnd() * T.N) | 0, h = T.H[i], side = rnd() < 0.5 ? -1 : 1, d = T.R[i] + 12 + rnd() * 8;
     const px = T.X[i] + Math.cos(h) * d * side, py = T.Y[i] + Math.sin(h) * d * side;
     if (!wall(px, py) || !wall(px + 6, py) || !wall(px - 6, py) || !wall(px, py + 6) || !wall(px, py - 6)) continue;
-    spectator(v, px, py, rnd); spect++;
+    spectatorHD(v, px, py, rnd); spect++;
   }
-  // trees + umbrellas (overlay, drawn above cars, non-solid) [observed; solidity inferred]
+  // trees + umbrellas: shadow painted on the ground, the canopy is an overlay above the cars
   const placeOverlay = (count, minClear, make) => {
     let placed = 0;
     for (let tries = 0; tries < count * 120 && placed < count; tries++) {
       const px = 20 + rnd() * (width - 40), py = 20 + rnd() * (height - 40);
       let ok = wall(px, py);
       for (let a = 0; ok && a < 8; a++) ok = wall(px + Math.cos(a * 0.785) * minClear, py + Math.sin(a * 0.785) * minClear);
-      if (!ok) continue;
-      if (T.decor.some(d => Math.hypot(d.x - px, d.y - py) < 50)) continue;
-      T.decor.push(Object.assign({ x: px, y: py }, make())); placed++;
+      if (!ok || T.decor.some(d => Math.hypot(d.x - px, d.y - py) < 50)) continue;
+      const d = Object.assign({ x: px, y: py, ph: rnd() * 6.28 }, make());
+      v.save(); v.fillStyle = TH.shadow; v.filter = 'blur(' + (5 * hd) + 'px)'; v.beginPath(); v.ellipse(px + d.r * 0.38 + 4, py + d.r * 0.5 + 5, d.r * 1.05, d.r * 0.92, 0.5, 0, 7); v.fill(); v.restore();
+      T.decor.push(d); placed++;
     }
   };
-  const tree = [RR.makeTree(30), RR.makeTree(24)], umb = [RR.makeUmbrella(24, 'red'), RR.makeUmbrella(24, 'blue'), RR.makeUmbrella(18, 'blue')];
-  placeOverlay(T.def.umb, 6, () => ({ img: umb[(rnd() * 3) | 0] }));
-  placeOverlay(Math.round(T.def.trees * 0.6), 10, () => ({ img: tree[(rnd() * 2) | 0] }));
-
-  // cones at corner apexes on the road edge (inside) [observed cone rows]
-  T.coneSpots = [];
-  for (const c of corners) {
-    if (!c.sharp) continue;
-    const ix = -(c.di[0] - c.dO[0]), iy = -(c.di[1] - c.dO[1]); const inn = norm(ix, iy);
-    for (let k = -1; k <= 1; k++) {
-      const bx = (c.a[0] + c.b[0]) / 2 + inn[0] * (W * 0.5 - 8), by = (c.a[1] + c.b[1]) / 2 + inn[1] * (W * 0.5 - 8);
-      const tx = (c.b[0] - c.a[0]), ty = (c.b[1] - c.a[1]); const tn = norm(tx, ty);
-      T.coneSpots.push({ x: bx + tn[0] * k * 14, y: by + tn[1] * k * 14 });
+  const trees = RR.themeTrees(TH.trees);
+  const umbs = [RR.makeUmbrellaHD(24, 'red'), RR.makeUmbrellaHD(24, 'blue'), RR.makeUmbrellaHD(18, 'blue')];
+  const putAt = (list, make) => (list || []).forEach(p => {   // hand-placed (track maker)
+    const d = Object.assign({ x: p[0], y: p[1], ph: rnd() * 6.28 }, make(p));
+    v.save(); v.fillStyle = TH.shadow; v.filter = 'blur(' + (5 * hd) + 'px)'; v.beginPath(); v.ellipse(d.x + d.r * 0.38 + 4, d.y + d.r * 0.5 + 5, d.r * 1.05, d.r * 0.92, 0.5, 0, 7); v.fill(); v.restore();
+    T.decor.push(d);
+  });
+  if (T.items.umbAt) putAt(T.items.umbAt, p => { const u = umbs[(p[2] || 0) % 3]; return { img: u, r: u.r, umb: true }; });
+  else placeOverlay(T.def.umb || 0, 6, () => { const u = umbs[(rnd() * 3) | 0]; return { img: u, r: u.r, umb: true }; });
+  if (T.items.treeAt) putAt(T.items.treeAt, p => { const t = trees[(p[2] || 0) % trees.length]; return { img: t, r: t.r }; });
+  else placeOverlay(Math.round((T.def.trees || 0) * 0.6), 10, () => { const t = trees[(rnd() * trees.length) | 0]; return { img: t, r: t.r }; });
+  // street lamps (night races; the track maker can place them too)
+  T.lamps = [];
+  const lampAt = (lx, ly, hx, hy) => {
+    v.save(); v.strokeStyle = 'rgba(0,0,0,0.3)'; v.lineWidth = 2.2; v.beginPath(); v.moveTo(lx + 2, ly + 3); v.lineTo(hx + 2, hy + 3); v.stroke();
+    v.strokeStyle = '#3a3e44'; v.lineWidth = 1.6; v.beginPath(); v.moveTo(lx, ly); v.lineTo(hx, hy); v.stroke();
+    v.fillStyle = '#2a2e33'; v.beginPath(); v.arc(lx, ly, 2.2, 0, 7); v.fill(); v.fillStyle = '#d8d4c0'; v.beginPath(); v.ellipse(hx, hy, 2.6, 1.8, Math.atan2(hy - ly, hx - lx), 0, 7); v.fill(); v.restore();
+    T.lamps.push({ x: hx, y: hy });
+  };
+  if (T.items.lampAt) T.items.lampAt.forEach(p => lampAt(p[0], p[1], p[0], p[1]));
+  else if (T.time === 'night') {
+    const every = Math.round(230 / T.step);
+    for (let i = 0, k = 0; i < T.N; i += every, k++) {
+      const h = T.H[i], side = k % 2 ? 1 : -1, nx = Math.cos(h) * side, ny = Math.sin(h) * side, d = T.R[i] + 10;
+      const lx = T.X[i] + nx * d, ly = T.Y[i] + ny * d;
+      if (!wall(lx, ly) || !wall(lx + nx * 4, ly + ny * 4)) continue;
+      lampAt(lx, ly, lx - nx * 16, ly - ny * 16);
     }
   }
-  T.vis = vis;
+
+  // cones at sharp-corner apexes (or where the track maker put them)
+  T.coneSpots = [];
+  if (T.items.coneAt) T.items.coneAt.forEach(p => T.coneSpots.push({ x: p[0], y: p[1] }));
+  else for (const c of corners) {
+    if (!c.sharp) continue;
+    const inn = norm(-(c.di[0] - c.dO[0]), -(c.di[1] - c.dO[1])), tn = norm(c.b[0] - c.a[0], c.b[1] - c.a[1]);
+    for (let k = -1; k <= 1; k++) {
+      const bx2 = (c.a[0] + c.b[0]) / 2 + inn[0] * (W * 0.5 - 8), by2 = (c.a[1] + c.b[1]) / 2 + inn[1] * (W * 0.5 - 8);
+      T.coneSpots.push({ x: bx2 + tn[0] * k * 14, y: by2 + tn[1] * k * 14 });
+    }
+  }
+  // ---------- grass tufts that sway (run-off grass and the long grass behind the rail) ----------
+  const tufts = [], dense = (RR.MOBILE ? 0.6 : 1) * (TH.tuftDense || 1);
+  T.tuftPal = { base: TH.tuft[0], tip: TH.tuft[1] }; T.tuftPalTall = { base: TH.tall[0], tip: TH.tall[1] };
+  for (let i = 0; i < T.N; i += 2) {
+    const h = T.H[i], nx = Math.cos(h), ny = Math.sin(h);
+    for (const side of [-1, 1]) {
+      if (rnd() < 0.85 * dense) {   // run-off
+        const d = W / 2 + 10 + rnd() * Math.max(0, T.R[i] - W / 2 - 14), px = T.X[i] + nx * d * side + (rnd() - 0.5) * 6, py = T.Y[i] + ny * d * side + (rnd() - 0.5) * 6;
+        const s = surf[(py | 0) * width + (px | 0)];
+        if (s === 0 && px > 0 && py > 0 && px < width && py < height) tufts.push(makeTuft(px, py, rnd, false));
+      }
+      if (rnd() < 0.7 * dense) {    // long grass behind the rail
+        const d = T.R[i] + 9 + rnd() * 32, px = T.X[i] + nx * d * side, py = T.Y[i] + ny * d * side;
+        if (wall(px, py) && wall(px - nx * side * 6, py - ny * side * 6) && px > 2 && py > 2 && px < width - 2 && py < height - 2) tufts.push(makeTuft(px, py, rnd, true));
+      }
+    }
+  }
+  const G = 96, gw = Math.ceil(width / G), grid = new Array(gw * Math.ceil(height / G));
+  tufts.forEach(t => { const k = ((t.y / G) | 0) * gw + ((t.x / G) | 0); (grid[k] || (grid[k] = [])).push(t); });
+  T.tufts = tufts; T.tuftGrid = { G, gw, gh: Math.ceil(height / G), cells: grid };
+  makeTiles(T, vis, hd);
+}
+// cut the finished track picture into small tiles (with a 2 px apron so smooth scaling shows no seams).
+// Small tiles stay on the graphics card; tyre marks only touch the tiles they cross.
+const TILE = 256, APRON = 2;
+function makeTiles(T, vis, hd) {
+  const cols = Math.ceil(T.width / TILE), rows = Math.ceil(T.height / TILE), side = Math.round(TILE * hd) + APRON * 2, c = [];
+  for (let ty = 0; ty < rows; ty++) for (let tx = 0; tx < cols; tx++) {
+    const t = RR.mk(side, side), x = t.getContext('2d');
+    x.drawImage(vis, -Math.round(tx * TILE * hd) + APRON, -Math.round(ty * TILE * hd) + APRON);
+    c.push(t);
+  }
+  T.tiles = { size: TILE, hd, cols, rows, c, side }; T.hd = hd;
+  vis.width = vis.height = 1;   // free the big picture
+}
+// draw on the track picture (tyre marks): fn(ctx) is called once per tile that the box [x0,y0,x1,y1] touches, in world units
+RR.paintTrack = function (T, x0, y0, x1, y1, fn) {
+  const G = T.tiles, s = G.size;
+  const a = Math.max(0, (x0 / s) | 0), b = Math.min(G.cols - 1, (x1 / s) | 0), c = Math.max(0, (y0 / s) | 0), d = Math.min(G.rows - 1, (y1 / s) | 0);
+  for (let ty = c; ty <= d; ty++) for (let tx = a; tx <= b; tx++) {
+    const x = G.c[ty * G.cols + tx].getContext('2d');
+    x.setTransform(G.hd, 0, 0, G.hd, -Math.round(tx * s * G.hd) + APRON, -Math.round(ty * s * G.hd) + APRON); fn(x); x.setTransform(1, 0, 0, 1, 0, 0);
+  }
+};
+RR.drawTrackTiles = function (ctx, T, x0, y0, x1, y1) {
+  const G = T.tiles, s = G.size, inner = G.side - APRON * 2;
+  const a = Math.max(0, (x0 / s) | 0), b = Math.min(G.cols - 1, (x1 / s) | 0), c = Math.max(0, (y0 / s) | 0), d = Math.min(G.rows - 1, (y1 / s) | 0);
+  for (let ty = c; ty <= d; ty++) for (let tx = a; tx <= b; tx++) ctx.drawImage(G.c[ty * G.cols + tx], APRON, APRON, inner, inner, tx * s, ty * s, s * inner / (s * G.hd), s * inner / (s * G.hd));
+};
+// pre-drawn grass tuft pictures (base at the bottom centre); bent at draw time with a skew
+RR.makeTuftSprites = function (pal, seed) {
+  const out = { short: [], tall: [] }, rnd = RR.rng(seed || 5), sc = 2;
+  for (const tall of [false, true]) for (let v = 0; v < 6; v++) {
+    const h = tall ? 13 : 9, w = 12, c = RR.mk(w * sc, (h + 2) * sc), x = c.getContext('2d'); x.scale(sc, sc); x.lineCap = 'round';
+    const n = tall ? 7 + ((rnd() * 4) | 0) : 5 + ((rnd() * 4) | 0), bl = [];
+    for (let k = 0; k < n; k++) bl.push([w / 2 + (rnd() - 0.5) * 6, h + 1 - rnd() * 1.5, -Math.PI / 2 + (rnd() - 0.5) * 1.5, (tall ? 7 : 4.5) + rnd() * (tall ? 5 : 3), (rnd() * 3) | 0]);
+    for (const pass of [0, 1]) for (const b of bl) {
+      const ca = Math.cos(b[2]), sa = Math.sin(b[2]), L = Math.min(b[3], h), ex = b[0] + ca * L * 0.6, ey = Math.max(0.6, b[1] + sa * L);
+      x.strokeStyle = pass ? pal.tip[b[4]] : pal.base[b[4]]; x.lineWidth = pass ? 0.9 : 1.6;
+      x.beginPath(); if (pass) { x.moveTo(b[0] + (ex - b[0]) * 0.55, b[1] + (ey - b[1]) * 0.55); x.lineTo(ex, ey); } else { x.moveTo(b[0], b[1]); x.quadraticCurveTo(b[0] + ca * L * 0.2, b[1] + sa * L * 0.5, ex, ey); }
+      x.stroke();
+    }
+    c.w = w; c.h = h + 2; (tall ? out.tall : out.short).push(c);
+  }
+  return out;
+};
+function makeTuft(x, y, rnd, tall) {
+  return { x, y, v: (rnd() * 6) | 0, tall, bx: 0, by: 0, vx: 0, vy: 0, f: 0 };
+}
+function softBlob(v, cx, cy, r, pat, rnd) {
+  v.save(); v.shadowColor = 'rgba(70,55,20,0.45)'; v.shadowBlur = 4 * RR.HD; v.fillStyle = pat; v.beginPath();
+  for (let k = 0; k <= 24; k++) { const a = k / 24 * Math.PI * 2, rr = r * (0.75 + 0.25 * Math.sin(a * 3 + rnd() * 0.6) + rnd() * 0.08); v.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.8); }
+  v.fill(); v.restore();
+}
+function spectatorHD(v, px, py, rnd) {
+  const shirts = ['#f0c020', '#d02a2a', '#2a5ad0', '#30a040', '#f0f0f0', '#e07020', '#9040c0'], skin = ['#f1c9a0', '#d9a273', '#a86e45', '#6d4527'];
+  const hair = ['#3a2a1a', '#1a1a1a', '#8a5a2a', '#d8b060'];
+  v.save(); v.fillStyle = 'rgba(0,0,0,0.3)'; v.beginPath(); v.ellipse(px + 2.5, py + 2.5, 4.2, 3, 0.4, 0, 7); v.fill();
+  v.fillStyle = shirts[(rnd() * shirts.length) | 0]; v.beginPath(); v.ellipse(px, py, 4, 2.6, 0, 0, 7); v.fill();
+  v.fillStyle = 'rgba(255,255,255,0.25)'; v.beginPath(); v.ellipse(px - 1, py - 0.8, 2.4, 1.2, 0, 0, 7); v.fill();
+  v.fillStyle = skin[(rnd() * skin.length) | 0]; v.beginPath(); v.arc(px, py - 0.5, 1.9, 0, 7); v.fill();
+  v.fillStyle = hair[(rnd() * hair.length) | 0]; v.beginPath(); v.arc(px - 0.3, py - 1.1, 1.5, 0, 7); v.fill();
+  v.restore();
 }
 
 function blob(x, cx, cy, r, c1, c2, rnd) {
@@ -673,7 +1086,7 @@ RR.buildVideoTrack = function () {
   while (xa > 0 && surf[sy * width + Math.round(xa) - 1] === 1) xa--;
   while (xb < width && surf[sy * width + Math.round(xb) + 1] === 1) xb++;
   for (let cx = xa, k = 0; cx < xb; cx += 6, k++) for (let row = 0; row < 2; row++) { x.fillStyle = (k + row) & 1 ? '#f4f4f4' : '#222'; x.fillRect(cx, sy - 6 + row * 6, 6, 6); }
-  T.vis = vis;
+  makeTiles(T, vis, 1); T.tufts = []; T.tuftGrid = null;
   return T;
 };
 
@@ -691,6 +1104,52 @@ RR.surfAt = function (T, x, y) {
   return T.surf[y * T.width + x];
 };
 
+// ---- puppet cars: moved from recorded / received samples instead of physics ----
+// ghost  = your best run on this track, replayed (see-through, no collisions)
+// remote = your Wi-Fi 1v1 opponent, positions arrive over the network ~20x a second
+function modeRace(race, opts) {
+  const T = race.T, add = (carId, slot, extra) => {
+    const cd = RR.CARS[carId], car = makeCar(cd, cd, 1.0, T.grid[slot]);
+    Object.assign(car, { player: -1, ai: false, gridSlot: slot, id: race.cars.length, carId }, extra);
+    car.sprite = RR.makeCarSprite(car.liv); initProgress(T, car); race.cars.push(car); return car;
+  };
+  race.mode = opts.mode;
+  if (opts.mode === 'ghost') {
+    add(opts.players[0].carId, RR.PLAYER_GRID_SLOT, { player: 0 });
+    const g = opts.ghost;
+    add(g.carId, RR.PLAYER_GRID_SLOT, { puppet: 'ghost', samples: g.samples, ghostTime: g.time, liv: Object.assign({}, RR.CARS[g.carId], { name: 'GHOST' }) });
+  } else {   // 'net': up to 6 players on grid slots 0-5 by player number; everyone but me is a puppet
+    for (const p of opts.netPlayers) {
+      if (p.id === opts.myId) add(p.car, p.id, { player: 0, netId: p.id });
+      else add(p.car, p.id, { puppet: 'remote', netBuf: [], netId: p.id });
+    }
+  }
+  if (T.items && T.items.pickAt) {   // hand-placed pickups (track maker): stay in place, random type if none chosen
+    const types = ['S', 'A', 'T', 'N'];
+    T.items.pickAt.forEach(p => { let best = 0, bd = 1e12; for (let i = 0; i < T.N; i += 2) { const d = (T.X[i] - p[0]) ** 2 + (T.Y[i] - p[1]) ** 2; if (d < bd) { bd = d; best = i; } }
+      race.pickups.push({ type: types.includes(p[2]) ? p[2] : types[(race.rnd() * 4) | 0], x: p[0], y: p[1], idx: best, active: true, t: 0, phase: race.rnd() * 6, fixed: true }); });
+  } else for (let i = 0; i < RR.PICKUPS_ACTIVE; i++) spawnPickup(race, (i + 0.5) / RR.PICKUPS_ACTIVE);
+  if (opts.mode === 'net') race.pickups.forEach(p => p.fixed = true);   // pickups respawn in place so both screens agree
+  return race;
+}
+function puppetStep(race, c) {
+  if (c.puppet === 'ghost') {
+    const S = c.samples, n = S.length / 3, f = race.time * 20, i = Math.min(n - 2, Math.floor(f)), k = Math.min(1, f - i);
+    if (n < 2) return;
+    const g = j => [S[j * 3] / 10, S[j * 3 + 1] / 10, S[j * 3 + 2] / 1000];
+    const a = g(i), b = g(i + 1); let da = b[2] - a[2]; da = Math.atan2(Math.sin(da), Math.cos(da));
+    c.x = a[0] + (b[0] - a[0]) * k; c.y = a[1] + (b[1] - a[1]) * k; c.a = a[2] + da * k;
+    c.vx = (b[0] - a[0]) * 20; c.vy = (b[1] - a[1]) * 20;
+    if (f >= n - 1 && !c.finished) { c.finished = true; c.finishTime = c.ghostTime; race.finishOrder.push(c); }
+  } else {
+    const B = c.netBuf, t = race.time - 0.1;
+    if (!B.length) return;
+    while (B.length > 2 && B[1].t <= t) B.shift();
+    const a = B[0], b = B[1] || B[0], k = b.t > a.t ? Math.max(0, Math.min(1.5, (t - a.t) / (b.t - a.t))) : 0;
+    let da = b.a - a.a; da = Math.atan2(Math.sin(da), Math.cos(da));
+    c.x = a.x + (b.x - a.x) * k; c.y = a.y + (b.y - a.y) * k; c.a = a.a + da * k; c.vx = b.vx; c.vy = b.vy; c.nitro = b.n ? 0.2 : 0;
+  }
+}
 function videoRace(race, opts) {   // Video Test: just your car, at the exact spot/speed/heading from the start of the video
   const V = RR.VIDEO_TEST, T = race.T, cd = RR.CARS[opts.players[0].carId], L = RR.STAT_LV;
   const stats = { top: L.top[1], acc: L.acc[1], grip: L.grip[1], turn: L.turn[1] };   // the video's car = level 2 in everything
@@ -703,11 +1162,12 @@ function videoRace(race, opts) {   // Video Test: just your car, at the exact sp
 }
 RR.createRace = function (opts) {
   // opts: { trackIndex, players:[{carId}], raceSeed, twoPlayer }
-  const T = opts.videoTest ? RR.buildVideoTrack() : RR.buildTrack(RR.TRACKS[opts.trackIndex], opts.trackIndex);
+  const def = opts.trackDef, T = opts.videoTest ? RR.buildVideoTrack() : def ? RR.buildTrack(def, 40 + ((def.seed || 0) % 50)) : RR.buildTrack(RR.TRACKS[opts.trackIndex], opts.trackIndex);
   const rnd = RR.rng(opts.raceSeed || (Date.now() & 0xffffff));
   const race = { T, rnd, cars: [], cones: [], pickups: [], time: 0, phase: 'countdown', countdown: RR.COUNT_LEAD + 3 * RR.COUNT_STEP + 0.04,
-    trackIndex: opts.trackIndex, twoPlayer: !!opts.twoPlayer, finishOrder: [], events: [], skidQueue: [], video: !!opts.videoTest, laps: opts.videoTest ? 999 : RR.LAPS };
+    trackIndex: opts.trackIndex, twoPlayer: !!opts.twoPlayer, finishOrder: [], events: [], skidQueue: [], video: !!opts.videoTest, laps: opts.videoTest ? 999 : def ? Math.max(1, Math.min(9, def.laps || 3)) : RR.LAPS, custom: !!def };
   if (opts.videoTest) return videoRace(race, opts);
+  if (opts.mode) return modeRace(race, opts);
   const used = new Set(opts.players.map(p => p.carId));
   const aiPool = RR.CARS.filter(c => !used.has(c.id)).map(c => ({ liv: c, stats: c }))
     .concat(RR.AI_LIVERIES.map(l => ({ liv: l, stats: RR.AI_STATS })));
@@ -715,11 +1175,13 @@ RR.createRace = function (opts) {
   for (let i = aiPool.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [aiPool[i], aiPool[j]] = [aiPool[j], aiPool[i]]; }
   // bots push harder when you bring a better car (playtest 10: good cars made races too easy)
   const bestCar = Math.max(...opts.players.map(p => { const c = RR.CARS[p.carId]; return c.ts + c.ac + c.ti; }));
-  const aiScale = RR.aiScaleForRace(opts.trackIndex) * (1 + RR.AI_CAR_BOOST * Math.max(0, bestCar - 5));
+  const diffRace = def ? ({ easy: 0, normal: 8, hard: 17 })[def.diff || 'normal'] : opts.trackIndex;
+  const aiScale = RR.aiScaleForRace(diffRace) * (1 + RR.AI_CAR_BOOST * Math.max(0, bestCar - 5));
+  const nBots = def ? Math.max(0, Math.min(race.twoPlayer ? 6 : 7, def.bots == null ? 7 : def.bots)) : RR.NUM_CARS - (race.twoPlayer ? 2 : 1);
   const slots = [];
-  if (race.twoPlayer) slots.push(RR.PLAYER_GRID_SLOT - 1, RR.PLAYER_GRID_SLOT); else slots.push(RR.PLAYER_GRID_SLOT);
+  if (race.twoPlayer) slots.push(nBots, nBots + 1); else slots.push(nBots);   // players line up right behind the bots
   let ai = 0;
-  for (let k = 0; k < RR.NUM_CARS; k++) {
+  for (let k = 0; k < nBots + slots.length; k++) {
     const g = T.grid[k];
     const pIdx = slots.indexOf(k);
     let car;
@@ -741,7 +1203,11 @@ RR.createRace = function (opts) {
     race.cars.push(car);
   }
   T.coneSpots.forEach(s => race.cones.push({ x: s.x, y: s.y, vx: 0, vy: 0, hx: s.x, hy: s.y }));
-  for (let i = 0; i < RR.PICKUPS_ACTIVE; i++) spawnPickup(race, (i + 0.5) / RR.PICKUPS_ACTIVE);
+  if (T.items && T.items.pickAt) {   // hand-placed pickups (track maker): stay in place, random type if none chosen
+    const types = ['S', 'A', 'T', 'N'];
+    T.items.pickAt.forEach(p => { let best = 0, bd = 1e12; for (let i = 0; i < T.N; i += 2) { const d = (T.X[i] - p[0]) ** 2 + (T.Y[i] - p[1]) ** 2; if (d < bd) { bd = d; best = i; } }
+      race.pickups.push({ type: types.includes(p[2]) ? p[2] : types[(race.rnd() * 4) | 0], x: p[0], y: p[1], idx: best, active: true, t: 0, phase: race.rnd() * 6, fixed: true }); });
+  } else for (let i = 0; i < RR.PICKUPS_ACTIVE; i++) spawnPickup(race, (i + 0.5) / RR.PICKUPS_ACTIVE);
   return race;
 };
 
@@ -875,16 +1341,18 @@ function collideCars(race) {
   const cs = race.cars, R = P.carCircleR * 2;
   for (let i = 0; i < cs.length; i++) for (let j = i + 1; j < cs.length; j++) {
     const a = cs[i], b = cs[j];
+    if (a.puppet === 'ghost' || b.puppet === 'ghost') continue;
     if (Math.abs(a.x - b.x) > 40 || Math.abs(a.y - b.y) > 40) continue;
+    const ka = a.puppet ? 0 : (b.puppet ? 2 : 1), kb = b.puppet ? 0 : (a.puppet ? 2 : 1);   // share of the push each car takes
     for (const pa of carCircles(a)) for (const pb of carCircles(b)) {
       let dx = pb[0] - pa[0], dy = pb[1] - pa[1]; const d = Math.hypot(dx, dy);
       if (d >= R || d < 1e-4) continue;
       dx /= d; dy /= d; const pen = (R - d) / 2;
-      a.x -= dx * pen; a.y -= dy * pen; b.x += dx * pen; b.y += dy * pen;
+      a.x -= dx * pen * ka; a.y -= dy * pen * ka; b.x += dx * pen * kb; b.y += dy * pen * kb;
       const rv = (b.vx - a.vx) * dx + (b.vy - a.vy) * dy;
       if (rv < 0) {
         const jimp = -(1 + P.carRestitution) * rv / 2;
-        a.vx -= jimp * dx; a.vy -= jimp * dy; b.vx += jimp * dx; b.vy += jimp * dy;
+        a.vx -= jimp * dx * ka; a.vy -= jimp * dy * ka; b.vx += jimp * dx * kb; b.vy += jimp * dy * kb;
         const ta = (pa[0] - a.x) * dy - (pa[1] - a.y) * dx, tb = (pb[0] - b.x) * dy - (pb[1] - b.y) * dx;
         a.av -= clamp(jimp * 0.02, 0, 1.5) * Math.sign(ta || 1); b.av += clamp(jimp * 0.02, 0, 1.5) * Math.sign(tb || 1);
         if (jimp > 12 && race.time - a.lastHit > 0.2) { race.events.push({ type: 'car', car: a, other: b, power: jimp }); a.lastHit = race.time; }
@@ -896,6 +1364,7 @@ function collideCars(race) {
 function stepCones(race, dt) {
   for (const k of race.cones) {
     for (const c of race.cars) {
+      if (c.puppet === 'ghost') continue;
       for (const p of carCircles(c)) {
         const dx = k.x - p[0], dy = k.y - p[1], d = Math.hypot(dx, dy);
         if (d < 10 && d > 1e-3) {
@@ -918,6 +1387,7 @@ function stepPickups(race, dt) {
     p.phase += dt * 3;
     if (!p.active) { p.t -= dt; if (p.t <= 0) { if (!p.fixed) Object.assign(p, respawnSpot(race)); p.active = true; } continue; }
     for (const c of race.cars) {
+      if (c.puppet) continue;
       if (c.ai && race.time < (c.pickupWait || 0)) continue;  // bots wait between pickups so cars at the back get some
       if (Math.hypot(c.x - p.x, c.y - p.y) < RR.PICKUP_RADIUS) {
         if (c.ai) { c.aiPicks = (c.aiPicks || []).filter(tm => race.time - tm < 20); c.aiPicks.push(race.time);
@@ -926,7 +1396,7 @@ function stepPickups(race, dt) {
         if (p.type === 'N') c.nitro = D.nitroTime;
         else c.up[D.stat] = Math.min(D.max, c.up[D.stat] + 1);
         c.popup = { text: D.name, t: 1.2, color: D.color };
-        race.events.push({ type: 'pickup', car: c, kind: p.type });
+        race.events.push({ type: 'pickup', car: c, kind: p.type, idx: race.pickups.indexOf(p) });
         p.active = false; p.t = RR.PICKUP_RESPAWN; break;
       }
     }
@@ -1032,6 +1502,7 @@ RR.step = function (race, dt, inputs) {
   race.time += dt;
   if (race.goT > 0) race.goT -= dt;
   for (const c of race.cars) {
+    if (c.puppet) { puppetStep(race, c); continue; }
     if (c.ai || c.finished) aiDrive(race, c, dt);
     else { const inp = inputs[c.player] || {}; c.steer = inp.steer || 0; c.throttle = !!inp.throttle; }
     stepCar(race, c, dt);
@@ -1039,8 +1510,9 @@ RR.step = function (race, dt, inputs) {
   }
   collideCars(race);
   for (const c of race.cars) {
-    resolveWalls(race, c);
+    if (!c.puppet) resolveWalls(race, c);
     updateProgress(race.T, c);
+    if (c.puppet) { if (c.puppet === 'remote' && !c.finished && c.netFin != null) { c.finished = true; c.finishTime = c.netFin; race.finishOrder.push(c); } continue; }
     if (c.player >= 0 && c.lap === race.laps - 1 && !c.finalLapSaid) { c.finalLapSaid = true; race.events.push({ type: 'finalLap', car: c }); }
     c.skidTick = (c.skidTick || 0) + 1;
     if (c.slip > P.skidThreshold && c.surf === 1 && Math.hypot(c.vx, c.vy) > 30 && c.skidTick % 3 === 0) race.skidQueue.push([c.x, c.y, c.a]);
@@ -1048,6 +1520,11 @@ RR.step = function (race, dt, inputs) {
       c.finished = true; c.finishTime = race.time; race.finishOrder.push(c);
       race.events.push({ type: 'finish', car: c });
     }
+  }
+  if (!race.video && !race.twoPlayer && race.mode !== 'net') {   // record your run for the ghost (20 samples/s)
+    const me = race.cars.find(c => c.player === 0);
+    race.rec = race.rec || [];
+    if (me && !me.finished && race.time * 20 >= race.rec.length / 3) race.rec.push(Math.round(me.x * 10), Math.round(me.y * 10), Math.round(me.a * 1000));
   }
   stepCones(race, dt);
   stepPickups(race, dt);
@@ -1251,6 +1728,356 @@ A.startMusic = function () { A.setMusic(A.musicMode || 'main'); };
 A.stopMusic = function () { A.setMusic(null); };
 })();
 
+// Track maker: draw a track, set its terrain / time of day / laps / bots, place everything that exists in the game,
+// save as many tracks as you like, race bots on them (or pick one in a Wi-Fi room).
+'use strict';
+(function () {
+const RR = window.RR;
+const KEY = 'rr_tracks', U = RR.TRACK_UNIT, MAXX = 38, MAXY = 27;
+const store = {
+  load() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; } },
+  save(list) { try { localStorage.setItem(KEY, JSON.stringify(list)); return true; } catch (e) { return false; } },
+  put(def) { const l = store.load(), i = l.findIndex(t => t.id === def.id); def.updated = Date.now(); if (i >= 0) l[i] = def; else l.unshift(def); return store.save(l); },
+  del(id) { store.save(store.load().filter(t => t.id !== id)); },
+};
+const newId = () => 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const blank = () => ({ id: newId(), name: 'My Track', w: 112, pts: [[3, 9], [3, 3], [18, 3], [18, 9]], cuts: [], theme: 'grass', time: 'day', laps: 3, bots: 7, diff: 'normal', auto: true,
+  treeAt: [], umbAt: [], coneAt: [], pickAt: [], lampAt: [], seed: (Math.random() * 1e6) | 0 });
+// what the game builds from a saved track
+function playDef(d) {
+  const p = { name: d.name, w: d.w, pts: d.pts, cuts: d.cuts || [], theme: d.theme, time: d.time, laps: d.laps, bots: d.bots, diff: d.diff, seed: d.seed || 0 };
+  const has = k => d[k] && d[k].length;
+  if (d.auto) {
+    let mx = 0, my = 0; d.pts.forEach(q => { mx = Math.max(mx, q[0]); my = Math.max(my, q[1]); });
+    p.trees = Math.round(6 + mx * my / 16); p.umb = 5;
+    if (has('treeAt')) p.treeAt = d.treeAt; if (has('umbAt')) p.umbAt = d.umbAt; if (has('coneAt')) p.coneAt = d.coneAt; if (has('lampAt')) p.lampAt = d.lampAt;
+  } else { p.trees = 0; p.umb = 0; p.treeAt = d.treeAt || []; p.umbAt = d.umbAt || []; p.coneAt = d.coneAt || []; p.lampAt = d.lampAt || []; }
+  if (has('pickAt')) p.pickAt = d.pickAt;
+  return p;
+}
+// ---------- checks ----------
+function segX(a, b, c, d) {
+  const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b) && o(a, b, c) !== 0 && o(c, d, a) !== 0;
+}
+function check(d) {
+  const errs = [], warn = [], bad = [];
+  if (d.pts.length < 3) { errs.push('A track needs at least 3 corners.'); return { errs, warn, bad }; }
+  const sh = RR.trackShape(d); if (!sh) { errs.push('A track needs at least 3 corners.'); return { errs, warn, bad }; }
+  const c = sh.cham, n = c.length;
+  for (let i = 0; i < n; i++) for (let j = i + 2; j < n; j++) {
+    if (i === 0 && j === n - 1) continue;
+    if (segX(c[i], c[(i + 1) % n], c[j], c[(j + 1) % n])) { bad.push(i, j); }
+  }
+  if (bad.length) errs.push('The road crosses itself (shown in red). Move a corner so it doesn\'t.');
+  for (let i = 0; i < d.pts.length; i++) { const p = d.pts[i], q = d.pts[(i + 1) % d.pts.length]; if (Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.9) { warn.push('Two corners are very close together.'); break; } }
+  const l0 = Math.hypot(d.pts[1][0] - d.pts[0][0], d.pts[1][1] - d.pts[0][1]);
+  if (l0 < 4) warn.push('The start straight (green corner to the next one) is short: the starting grid may stick out.');
+  return { errs, warn, bad };
+}
+// ---------- sharing codes ----------
+async function packCode(d) {
+  const txt = JSON.stringify(d);
+  try { const b = new Uint8Array(await new Response(new Blob([txt]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer()); let s = ''; b.forEach(x => s += String.fromCharCode(x)); return 'RRT1' + btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+  catch (e) { return 'RRT0' + btoa(unescape(encodeURIComponent(txt))); }
+}
+async function unpackCode(code) {
+  code = (code || '').trim().replace(/\s+/g, ''); let txt;
+  if (code.startsWith('RRT1')) { const b64 = code.slice(4).replace(/-/g, '+').replace(/_/g, '/'), bin = atob(b64 + '==='.slice((b64.length + 3) % 4)), b = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) b[k] = bin.charCodeAt(k);
+    txt = await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text(); }
+  else if (code.startsWith('RRT0')) txt = decodeURIComponent(escape(atob(code.slice(4))));
+  else throw new Error('not a track code');
+  const d = JSON.parse(txt); if (!d.pts || d.pts.length < 3) throw new Error('bad'); d.id = newId(); return Object.assign(blank(), d, { id: d.id });
+}
+// ---------- shared look ----------
+const CSS = `
+#rr-ed,#rr-tl{position:fixed;inset:0;z-index:60;font-family:"Trebuchet MS","Segoe UI",sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
+#rr-tl{background:radial-gradient(circle at 30% 20%,#3a0d0d,#140303);display:flex;align-items:center;justify-content:center}
+#rr-tl .box{background:#2a0606;border:3px solid #ff2c1e;border-radius:16px;padding:16px 18px;width:min(720px,94vw);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 10px 40px #000a}
+#rr-tl h2{margin:0 0 4px;font-size:24px}#rr-tl .sub{color:#ffb0a0;font-size:13px;margin-bottom:10px}
+#rr-tl .list{overflow:auto;flex:1;min-height:80px}
+.rr-card{display:flex;align-items:center;gap:10px;background:#3d0a0a;border:2px solid #7a1a12;border-radius:12px;padding:8px 10px;margin:6px 0}
+.rr-card canvas{border-radius:8px;flex:none;background:#000}
+.rr-card .nm{font-weight:bold;font-size:16px}.rr-card .meta{font-size:12px;color:#ffc8b8}
+.rr-b{background:linear-gradient(#b81a12,#7a0c08);color:#fff;border:2px solid #ff6a50;border-radius:9px;padding:6px 11px;font:bold 13px "Trebuchet MS",sans-serif;cursor:pointer;white-space:nowrap}
+.rr-b:hover{filter:brightness(1.2)}.rr-b.blue{background:linear-gradient(#2a4ad0,#16287a);border-color:#8fa8ff}.rr-b.green{background:linear-gradient(#22a032,#126018);border-color:#90f0a0}
+.rr-b.on{outline:3px solid #ffcf40;outline-offset:1px}.rr-b:disabled{opacity:.45;cursor:default}
+#rr-ed{background:#140303;display:flex;flex-direction:column}
+#rr-ed .top{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 8px;background:#2a0606;border-bottom:2px solid #ff2c1e}
+#rr-ed .top label{font-size:12px;color:#ffc8b8;display:flex;align-items:center;gap:4px}
+#rr-ed select,#rr-ed input[type=text]{font:13px sans-serif;border-radius:6px;border:1px solid #ff6a50;background:#1a0303;color:#fff;padding:3px 5px}
+#rr-ed .mid{flex:1;display:flex;min-height:0}
+#rr-ed .tools{width:118px;flex:none;background:#220505;border-right:2px solid #7a1a12;padding:6px;display:flex;flex-direction:column;gap:5px;overflow:auto}
+#rr-ed .tools .rr-b{width:100%;text-align:left;padding:5px 7px}
+#rr-ed .tools .sep{height:1px;background:#7a1a12;margin:3px 0}
+#rr-ed .pk{display:flex;gap:3px}.rr-ed-pk{flex:1;padding:4px 0 !important;text-align:center !important;font-size:12px !important}
+#rr-ed .stage{flex:1;position:relative;min-width:0}#rr-ed canvas.ed{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
+#rr-ed .status{padding:5px 10px;background:#2a0606;border-top:2px solid #7a1a12;font-size:13px;min-height:20px}
+#rr-ed .status .err{color:#ff7a6a;font-weight:bold}#rr-ed .status .warn{color:#ffcf40}
+#rr-ed .zoom{position:absolute;right:10px;bottom:10px;display:flex;gap:4px}
+.rr-pop{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center}
+.rr-pop .in{background:#2a0606;border:3px solid #ff2c1e;border-radius:14px;padding:14px;width:min(520px,92vw);color:#fff;font-family:"Trebuchet MS",sans-serif}
+.rr-pop textarea{width:100%;box-sizing:border-box;height:90px;background:#1a0303;color:#ffd;border:1px solid #ff6a50;border-radius:8px;font:12px monospace;word-break:break-all}
+@media (max-width:640px){#rr-ed .tools{width:84px}#rr-ed .tools .rr-b{font-size:11px;padding:4px}#rr-ed .top label span{display:none}}
+`;
+function css() { if (!document.getElementById('rr-ed-css')) { const s = document.createElement('style'); s.id = 'rr-ed-css'; s.textContent = CSS; document.head.appendChild(s); } }
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+function pop(html, wire) {
+  const p = document.createElement('div'); p.className = 'rr-pop'; p.innerHTML = '<div class="in">' + html + '</div>'; document.body.appendChild(p);
+  p.addEventListener('keydown', e => e.stopPropagation());
+  const close = () => p.remove(); wire(p, close); return p;
+}
+// ---------- drawing a track (editor view and list thumbnails) ----------
+const THEME_COL = { grass: ['#4a9233', '#5cab40'], autumn: ['#6b7f2c', '#7c8f36'], snow: ['#e3eaf2', '#d2dbe6'], desert: ['#d9a864', '#e6bf84'], beach: ['#58a83a', '#ead2a0'] };
+const PK_COL = { S: '#e23a2e', A: '#3fb043', T: '#3a78d8', N: '#e8b81c', R: '#c060e0' };
+function drawTrack(x, d, opt) {
+  opt = opt || {};
+  const sh = RR.trackShape(d), col = THEME_COL[d.theme] || THEME_COL.grass, W = d.w, run = W + 2 * RR.RUNOFF;
+  const path = c => { x.beginPath(); c.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); };
+  x.lineJoin = 'round';
+  if (sh) {
+    path(sh.cham); x.lineWidth = run + 8; x.strokeStyle = '#d8dde2'; x.stroke(); x.lineWidth = run; x.strokeStyle = col[1]; x.stroke();
+    (d.cuts || []).forEach(k => { if (k.length < 2) return; x.beginPath(); k.forEach((p, i) => { const w = RR.toWorld(p); i ? x.lineTo(w[0], w[1]) : x.moveTo(w[0], w[1]); }); x.lineCap = 'butt'; x.lineWidth = W * 0.62 + 40; x.strokeStyle = '#d8dde2'; x.stroke(); x.lineWidth = W * 0.62 + 32; x.strokeStyle = col[1]; x.stroke(); x.lineWidth = W * 0.62; x.strokeStyle = '#a8875a'; x.stroke(); });
+    path(sh.cham); x.lineJoin = 'miter'; x.miterLimit = 3; x.lineWidth = W + 4; x.strokeStyle = '#f4f4f2'; x.stroke(); x.lineWidth = W; x.strokeStyle = d.time === 'night' ? '#55585e' : '#7f8286'; x.stroke(); x.lineJoin = 'round';
+    // start line + direction arrows
+    const p0 = sh.pts[0], p1 = sh.pts[1], l0 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), dx = (p1[0] - p0[0]) / l0, dy = (p1[1] - p0[1]) / l0, s = Math.min(l0 * 0.5, 520);
+    const sx = p0[0] + dx * s, sy = p0[1] + dy * s;
+    x.save(); x.translate(sx, sy); x.rotate(Math.atan2(dy, dx));
+    for (let k = -W / 2; k < W / 2; k += 10) for (let r = 0; r < 2; r++) { x.fillStyle = ((Math.floor((k + W / 2) / 10) + r) % 2) ? '#fff' : '#111'; x.fillRect(r * 10 - 10, k, 10, 10); }
+    if (opt.grid) { x.fillStyle = 'rgba(255,255,255,0.45)'; for (let g = 0; g < Math.min(8, (d.bots || 0) + 1); g++) x.fillRect(-34 - g * 28 - 12, (g % 2 ? 1 : -1) * W * 0.22 - 9, 24, 18); }
+    x.restore();
+    if (opt.arrows) {
+      const c = sh.cham; x.fillStyle = 'rgba(255,255,255,0.55)';
+      for (let i = 0; i < c.length; i++) { const a = c[i], b = c[(i + 1) % c.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 160) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L; for (let t = 120; t < L - 60; t += 320) { const cx = a[0] + ux * t, cy = a[1] + uy * t; x.save(); x.translate(cx, cy); x.rotate(Math.atan2(uy, ux)); x.beginPath(); x.moveTo(18, 0); x.lineTo(-10, -14); x.lineTo(-4, 0); x.lineTo(-10, 14); x.closePath(); x.fill(); x.restore(); } }
+    }
+    if (opt.bad && opt.bad.length) { x.strokeStyle = '#ff2020'; x.lineWidth = 14; const c = sh.cham; opt.bad.forEach(i => { x.beginPath(); x.moveTo(c[i][0], c[i][1]); const b = c[(i + 1) % c.length]; x.lineTo(b[0], b[1]); x.stroke(); }); }
+  }
+  const icon = (list, f) => (list || []).forEach(p => { const w = RR.toWorld(p); f(w[0], w[1], p[2]); });
+  icon(d.treeAt, (px, py) => { x.fillStyle = d.theme === 'desert' ? '#4d8a3a' : d.theme === 'autumn' ? '#d0621e' : d.theme === 'snow' ? '#2c6a40' : '#2f8d3a'; x.beginPath(); x.arc(px, py, 26, 0, 7); x.fill(); x.strokeStyle = 'rgba(0,0,0,0.4)'; x.lineWidth = 3; x.stroke(); });
+  icon(d.umbAt, (px, py, t) => { for (let k = 0; k < 8; k++) { x.fillStyle = k % 2 ? '#fff' : (t === 0 ? '#e83a24' : '#2a6ee0'); x.beginPath(); x.moveTo(px, py); x.arc(px, py, 22, k * 0.785, (k + 1) * 0.785); x.fill(); } });
+  icon(d.coneAt, (px, py) => { x.fillStyle = '#e06a2a'; x.beginPath(); x.arc(px, py, 6, 0, 7); x.fill(); x.fillStyle = '#fff'; x.beginPath(); x.arc(px, py, 2.5, 0, 7); x.fill(); });
+  icon(d.pickAt, (px, py, t) => { x.fillStyle = PK_COL[t || 'R'] || PK_COL.R; x.beginPath(); x.arc(px, py, 12, 0, 7); x.fill(); x.strokeStyle = '#fff'; x.lineWidth = 2.5; x.stroke(); if (opt.labels) { x.fillStyle = '#fff'; x.font = 'bold 14px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(t || '?', px, py + 1); } });
+  icon(d.lampAt, (px, py) => { const g = x.createRadialGradient(px, py, 0, px, py, 34); g.addColorStop(0, 'rgba(255,230,150,0.9)'); g.addColorStop(1, 'rgba(255,230,150,0)'); x.fillStyle = g; x.beginPath(); x.arc(px, py, 34, 0, 7); x.fill(); x.fillStyle = '#fff6c0'; x.beginPath(); x.arc(px, py, 5, 0, 7); x.fill(); });
+}
+function thumb(d, w, h) {
+  const c = document.createElement('canvas'); c.width = w * 2; c.height = h * 2; c.style.width = w + 'px'; c.style.height = h + 'px';
+  const x = c.getContext('2d'), col = THEME_COL[d.theme] || THEME_COL.grass; x.fillStyle = col[0]; x.fillRect(0, 0, c.width, c.height);
+  let mx = 0, my = 0, nx = 1e9, ny = 1e9; d.pts.forEach(p => { mx = Math.max(mx, p[0]); my = Math.max(my, p[1]); nx = Math.min(nx, p[0]); ny = Math.min(ny, p[1]); });
+  const a = RR.toWorld([nx - 1.2, ny - 1.2]), b = RR.toWorld([mx + 1.2, my + 1.2]), s = Math.min(c.width / (b[0] - a[0]), c.height / (b[1] - a[1]));
+  x.setTransform(s, 0, 0, s, (c.width - (b[0] - a[0]) * s) / 2 - a[0] * s, (c.height - (b[1] - a[1]) * s) / 2 - a[1] * s);
+  drawTrack(x, d, {});
+  if (d.time === 'night') { x.setTransform(1, 0, 0, 1, 0, 0); x.fillStyle = 'rgba(10,15,50,0.45)'; x.fillRect(0, 0, c.width, c.height); }
+  if (d.time === 'sunset') { x.setTransform(1, 0, 0, 1, 0, 0); x.fillStyle = 'rgba(255,120,60,0.18)'; x.fillRect(0, 0, c.width, c.height); }
+  return c;
+}
+// ---------- My Tracks list ----------
+function openList(opts) {
+  opts = opts || {}; css(); closeAll();
+  const d = document.createElement('div'); d.id = 'rr-tl'; document.body.appendChild(d);
+  d.addEventListener('keydown', e => e.stopPropagation());
+  const draw = () => {
+    const list = store.load();
+    d.innerHTML = '<div class="box"><h2>' + (opts.net ? 'Pick one of your tracks' : 'My Tracks') + '</h2><div class="sub">' + (opts.net ? 'Everyone in the room races on it.' : 'Make your own tracks, then race the bots on them. Saved on this device.') + '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">' + (opts.net ? '' : '<button class="rr-b green" id="nw">+ New track</button><button class="rr-b blue" id="im">Paste a track code</button>') + '<span style="flex:1"></span><button class="rr-b" id="bk">Back</button></div>' +
+      '<div class="list"></div></div>';
+    const L = d.querySelector('.list');
+    if (!list.length) L.innerHTML = '<div style="color:#ffb0a0;padding:20px;text-align:center">No tracks yet' + (opts.net ? ' - make one in the Track Maker first.' : '. Press <b>+ New track</b> to make your first one!') + '</div>';
+    list.forEach(t => {
+      const c = document.createElement('div'); c.className = 'rr-card';
+      c.appendChild(thumb(t, 120, 72));
+      const info = document.createElement('div'); info.style.flex = '1'; info.style.minWidth = '0';
+      info.innerHTML = '<div class="nm">' + esc(t.name) + '</div><div class="meta">' + (RR.THEMES[t.theme] || RR.THEMES.grass).name + ' · ' + RR.TIMES[t.time || 'day'] + ' · ' + t.laps + ' laps · ' + t.bots + ' bots (' + t.diff + ')</div>';
+      c.appendChild(info);
+      const bt = document.createElement('div'); bt.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:260px';
+      const mk = (label, cls, fn) => { const b = document.createElement('button'); b.className = 'rr-b ' + cls; b.textContent = label; b.onclick = fn; bt.appendChild(b); return b; };
+      if (opts.net) mk('Race here', 'green', () => { closeAll(); opts.onPick(t); });
+      else {
+        mk('Race', 'green', () => { if (check(t).errs.length) { edit(t); return; } closeAll(); RR.game.playCustom(t, { from: 'list' }); });
+        mk('Edit', 'blue', () => edit(t));
+        mk('Copy', '', () => { const n = JSON.parse(JSON.stringify(t)); n.id = newId(); n.name = t.name + ' copy'; store.put(n); draw(); });
+        mk('Share', '', async () => { const code = await packCode(t); pop('<h3 style="margin:0 0 6px">Share "' + esc(t.name) + '"</h3><p style="margin:0 0 6px;color:#ffc8b8;font-size:13px">Send this code to a friend. They press <b>Paste a track code</b> in My Tracks.</p><textarea readonly>' + code + '</textarea><div style="margin-top:8px;display:flex;gap:6px"><button class="rr-b blue" id="cp">Copy code</button><button class="rr-b" id="x">Close</button></div>',
+          (p, close) => { p.querySelector('#x').onclick = close; p.querySelector('#cp').onclick = () => { const ta = p.querySelector('textarea'); ta.select(); try { navigator.clipboard.writeText(ta.value); } catch (e) { document.execCommand('copy'); } p.querySelector('#cp').textContent = 'Copied!'; }; }); });
+        const del = mk('Delete', '', () => { if (del.dataset.sure) { store.del(t.id); draw(); } else { del.dataset.sure = 1; del.textContent = 'Sure? Delete'; setTimeout(() => { if (del.isConnected) { delete del.dataset.sure; del.textContent = 'Delete'; } }, 3000); } });
+      }
+      c.appendChild(bt); L.appendChild(c);
+    });
+    d.querySelector('#bk').onclick = () => { closeAll(); if (opts.onBack) opts.onBack(); else RR.game.toMenu(); };
+    const nw = d.querySelector('#nw'); if (nw) nw.onclick = () => edit(blank());
+    const im = d.querySelector('#im'); if (im) im.onclick = () => pop('<h3 style="margin:0 0 6px">Paste a track code</h3><textarea id="tc" placeholder="RRT1..."></textarea><p id="st" style="color:#ffcf40;min-height:16px;margin:4px 0"></p><div style="display:flex;gap:6px"><button class="rr-b green" id="ok">Add track</button><button class="rr-b" id="x">Cancel</button></div>',
+      (p, close) => { p.querySelector('#x').onclick = close; p.querySelector('#tc').focus(); p.querySelector('#ok').onclick = async () => { try { const t = await unpackCode(p.querySelector('#tc').value); store.put(t); close(); draw(); } catch (e) { p.querySelector('#st').textContent = 'That code did not work.'; } }; });
+  };
+  draw();
+}
+function closeAll() { ['rr-tl', 'rr-ed'].forEach(id => { const e = document.getElementById(id); if (e) e.remove(); }); document.querySelectorAll('.rr-pop').forEach(p => p.remove()); if (ED.raf) cancelAnimationFrame(ED.raf); ED.raf = 0; }
+// ---------- the editor ----------
+const ED = {};
+const TOOLS = [['road', 'Road', 'Click to add a corner (on a road to split it). Drag corners to move them. Right-click a corner to remove it.'], ['cut', 'Shortcut', 'Click on the road to start a dirt shortcut, click to bend it, click on the road again to finish. Esc cancels.'],
+  ['tree', 'Tree', 'Click to plant a tree (the kind matches the terrain). Trees are drawn over the cars but are not solid.'], ['umb', 'Umbrella', 'Click to place a red/white umbrella. Click again with a blue one selected for blue.'],
+  ['cone', 'Cone', 'Click to place a cone (cars knock them about).'], ['pick', 'Pickup', 'Choose a pickup type below, then click on the road to place it. "?" = random each time.'],
+  ['lamp', 'Light', 'Click to place a street light (lights up night races).'], ['erase', 'Eraser', 'Click on anything to remove it.'], ['pan', 'Move view', 'Drag to move around. Mouse wheel (or + / -) zooms.']];
+function edit(def) {
+  css(); closeAll();
+  const d = JSON.parse(JSON.stringify(def));
+  ['cuts', 'treeAt', 'umbAt', 'coneAt', 'pickAt', 'lampAt'].forEach(k => d[k] = d[k] || []);
+  Object.assign(ED, { d, tool: 'road', pk: 'R', umb: 0, undo: [], redo: [], drag: null, cut: null, hover: null, dirty: true, saved: JSON.stringify(d) });
+  const root = document.createElement('div'); root.id = 'rr-ed'; document.body.appendChild(root);
+  const opt = (o, v) => Object.keys(o).map(k => '<option value="' + k + '"' + (k === v ? ' selected' : '') + '>' + o[k] + '</option>').join('');
+  const themes = {}; Object.keys(RR.THEMES).forEach(k => themes[k] = RR.THEMES[k].name);
+  root.innerHTML = '<div class="top">' +
+    '<button class="rr-b" id="bk">&#8592; Back</button>' +
+    '<input type="text" id="nm" maxlength="24" style="width:110px" value="' + esc(d.name) + '">' +
+    '<label><span>Terrain</span><select id="th">' + opt(themes, d.theme) + '</select></label>' +
+    '<label><span>Time</span><select id="tm">' + opt(RR.TIMES, d.time) + '</select></label>' +
+    '<label><span>Width</span><input type="range" id="w" min="84" max="136" step="2" value="' + d.w + '" style="width:80px"></label>' +
+    '<label><span>Laps</span><select id="lp">' + opt({ 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9 }, String(d.laps)) + '</select></label>' +
+    '<label><span>Bots</span><select id="bt">' + opt({ 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7 }, String(d.bots)) + '</select></label>' +
+    '<label><span>Skill</span><select id="df">' + opt({ easy: 'Easy', normal: 'Normal', hard: 'Hard' }, d.diff) + '</select></label>' +
+    '<label title="Adds trees, umbrellas, cones and (at night) street lights automatically wherever you didn\'t place your own"><input type="checkbox" id="au"' + (d.auto ? ' checked' : '') + '><span>Auto scenery</span></label>' +
+    '<span style="flex:1"></span>' +
+    '<button class="rr-b" id="un" title="Undo (Ctrl+Z)">Undo</button><button class="rr-b blue" id="td">Test drive</button><button class="rr-b green" id="rc">Race bots</button><button class="rr-b" id="sv">Save</button></div>' +
+    '<div class="mid"><div class="tools">' + TOOLS.map(t => '<button class="rr-b tool" data-t="' + t[0] + '">' + t[1] + '</button>').join('') +
+    '<div class="pk">' + ['S', 'A', 'T', 'N', 'R'].map(k => '<button class="rr-b rr-ed-pk" data-p="' + k + '" style="background:' + PK_COL[k] + '">' + (k === 'R' ? '?' : k) + '</button>').join('') + '</div>' +
+    '<div class="pk"><button class="rr-b rr-ed-pk" data-u="0" style="background:#e83a24">Red</button><button class="rr-b rr-ed-pk" data-u="1" style="background:#2a6ee0">Blue</button></div>' +
+    '<div class="sep"></div><button class="rr-b" id="rv" title="Race the other way round">Reverse</button><button class="rr-b" id="st" title="Then click a stretch of road: the start line moves there">Move start</button><button class="rr-b" id="cl">Clear items</button>' +
+    '</div><div class="stage"><canvas class="ed"></canvas><div class="zoom"><button class="rr-b" id="zo">-</button><button class="rr-b" id="zf">Fit</button><button class="rr-b" id="zi">+</button></div></div></div>' +
+    '<div class="status"></div>';
+  const $ = s => root.querySelector(s), cv = $('canvas.ed'), x = cv.getContext('2d'), status = $('.status');
+  ED.cv = cv; ED.x = x;
+  const push = () => { ED.undo.push(JSON.stringify(ED.d)); if (ED.undo.length > 60) ED.undo.shift(); ED.dirty = true; };
+  const setTool = t => { ED.tool = t; ED.cut = null; ED.startPick = false; root.querySelectorAll('.tool').forEach(b => b.classList.toggle('on', b.dataset.t === t)); ED.dirty = true; };
+  setTool('road');
+  root.querySelectorAll('.tool').forEach(b => b.onclick = () => setTool(b.dataset.t));
+  root.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { ED.pk = b.dataset.p; setTool('pick'); refreshPk(); });
+  root.querySelectorAll('[data-u]').forEach(b => b.onclick = () => { ED.umb = +b.dataset.u; setTool('umb'); refreshPk(); });
+  const refreshPk = () => { root.querySelectorAll('[data-p]').forEach(b => b.classList.toggle('on', b.dataset.p === ED.pk)); root.querySelectorAll('[data-u]').forEach(b => b.classList.toggle('on', +b.dataset.u === ED.umb)); };
+  refreshPk();
+  const bind = (id, key, conv) => { $(id).oninput = $(id).onchange = () => { const v = conv($(id).type === 'checkbox' ? $(id).checked : $(id).value); if (ED.d[key] !== v) { push(); ED.d[key] = v; } }; };
+  bind('#nm', 'name', v => String(v).slice(0, 24) || 'My Track'); bind('#th', 'theme', v => v); bind('#tm', 'time', v => v); bind('#w', 'w', v => +v);
+  bind('#lp', 'laps', v => +v); bind('#bt', 'bots', v => +v); bind('#df', 'diff', v => v); bind('#au', 'auto', v => !!v);
+  const undo = () => { if (!ED.undo.length) return; ED.d = JSON.parse(ED.undo.pop()); syncInputs(); ED.dirty = true; };
+  const syncInputs = () => { $('#nm').value = ED.d.name; $('#th').value = ED.d.theme; $('#tm').value = ED.d.time; $('#w').value = ED.d.w; $('#lp').value = ED.d.laps; $('#bt').value = ED.d.bots; $('#df').value = ED.d.diff; $('#au').checked = ED.d.auto; };
+  $('#un').onclick = undo;
+  const doSave = () => { if (!store.put(JSON.parse(JSON.stringify(ED.d)))) { flash('Could not save (storage full?)'); return false; } ED.saved = JSON.stringify(ED.d); flash('Saved "' + ED.d.name + '"'); return true; };
+  $('#sv').onclick = doSave;
+  const play = bots => { const c = check(ED.d); if (c.errs.length) { flash(c.errs[0], true); return; } doSave(); const t = JSON.parse(JSON.stringify(ED.d)); closeAll(); RR.game.playCustom(t, { from: 'editor', test: bots === 0 }); };
+  $('#td').onclick = () => play(0); $('#rc').onclick = () => play(1);
+  $('#bk').onclick = () => {
+    if (JSON.stringify(ED.d) !== ED.saved) pop('<h3 style="margin:0 0 8px">Save changes to "' + esc(ED.d.name) + '"?</h3><div style="display:flex;gap:6px"><button class="rr-b green" id="y">Save</button><button class="rr-b" id="n">Don\'t save</button><button class="rr-b blue" id="c">Keep editing</button></div>',
+      (p, close) => { p.querySelector('#y').onclick = () => { close(); doSave(); openList(); }; p.querySelector('#n').onclick = () => { close(); openList(); }; p.querySelector('#c').onclick = close; });
+    else openList();
+  };
+  $('#rv').onclick = () => { push(); const p = ED.d.pts; ED.d.pts = [p[0]].concat(p.slice(1).reverse()); };
+  $('#st').onclick = () => { setTool('road'); ED.startPick = true; flash('Click a stretch of road: the start line goes there.'); };
+  $('#cl').onclick = () => { push(); ['treeAt', 'umbAt', 'coneAt', 'pickAt', 'lampAt', 'cuts'].forEach(k => ED.d[k] = []); };
+  // view: grid units -> screen pixels
+  const fit = () => { const r = cv.getBoundingClientRect(); let mx = 0, my = 0, nx = 1e9, ny = 1e9; ED.d.pts.forEach(p => { mx = Math.max(mx, p[0]); my = Math.max(my, p[1]); nx = Math.min(nx, p[0]); ny = Math.min(ny, p[1]); });
+    nx = Math.max(0, nx - 2); ny = Math.max(0, ny - 2); mx = Math.min(MAXX, mx + 2); my = Math.min(MAXY, my + 2);
+    ED.s = Math.min(r.width / (mx - nx + 1), r.height / (my - ny + 1)); ED.ox = (r.width - (mx - nx) * ED.s) / 2 - nx * ED.s; ED.oy = (r.height - (my - ny) * ED.s) / 2 - ny * ED.s; ED.dirty = true; };
+  const zoom = (f, cx, cy) => { const r = cv.getBoundingClientRect(); cx = cx == null ? r.width / 2 : cx; cy = cy == null ? r.height / 2 : cy; const ns = Math.max(8, Math.min(140, ED.s * f)); ED.ox = cx - (cx - ED.ox) * ns / ED.s; ED.oy = cy - (cy - ED.oy) * ns / ED.s; ED.s = ns; ED.dirty = true; };
+  $('#zi').onclick = () => zoom(1.25); $('#zo').onclick = () => zoom(0.8); $('#zf').onclick = fit;
+  const toG = (px, py) => [(px - ED.ox) / ED.s, (py - ED.oy) / ED.s];
+  const snap = (v, s) => Math.round(v / s) * s;
+  const clampG = p => [Math.max(0.5, Math.min(MAXX, p[0])), Math.max(0.5, Math.min(MAXY, p[1]))];
+  const evPos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  const near = (list, g, rad) => { let bi = -1, bd = rad; (list || []).forEach((p, i) => { const dd = Math.hypot(p[0] - g[0], p[1] - g[1]); if (dd < bd) { bd = dd; bi = i; } }); return bi; };
+  const segNear = (g, rad) => { const P = ED.d.pts, n = P.length; let bi = -1, bd = rad;
+    for (let i = 0; i < n; i++) { const a = P[i], b = P[(i + 1) % n], vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy || 1, t = Math.max(0, Math.min(1, ((g[0] - a[0]) * vx + (g[1] - a[1]) * vy) / L2)), dd = Math.hypot(a[0] + vx * t - g[0], a[1] + vy * t - g[1]); if (dd < bd) { bd = dd; bi = i; } } return bi; };
+  const onRoad = g => segNear(g, ED.d.w / U / 2 + 0.25) >= 0;
+  cv.oncontextmenu = e => e.preventDefault();
+  cv.onwheel = e => { e.preventDefault(); const p = evPos(e); zoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, p[0], p[1]); };
+  cv.onpointerdown = e => {
+    cv.setPointerCapture(e.pointerId);
+    const p = evPos(e), g = toG(p[0], p[1]), rad = 14 / ED.s;
+    if (e.button === 1 || e.button === 2 && ED.tool !== 'road' || ED.tool === 'pan') { ED.drag = { pan: true, sx: p[0], sy: p[1], ox: ED.ox, oy: ED.oy }; return; }
+    const T = ED.tool, D = ED.d;
+    if (T === 'road') {
+      const i = near(D.pts, g, rad);
+      if (e.button === 2) { if (i >= 0 && D.pts.length > 3) { push(); D.pts.splice(i, 1); } else if (i < 0) ED.drag = { pan: true, sx: p[0], sy: p[1], ox: ED.ox, oy: ED.oy }; return; }
+      if (ED.startPick) { const s = segNear(g, 1); ED.startPick = false; if (s >= 0) { push(); D.pts = D.pts.slice(s).concat(D.pts.slice(0, s)); flash('Start line moved.'); } return; }
+      if (i >= 0) { push(); ED.drag = { pt: i }; return; }
+      push(); const q = clampG([snap(g[0], 0.5), snap(g[1], 0.5)]), s = segNear(g, 0.6);
+      if (s >= 0) D.pts.splice(s + 1, 0, q); else D.pts.push(q);
+      ED.drag = { pt: s >= 0 ? s + 1 : D.pts.length - 1 };
+    } else if (T === 'cut') {
+      const q = clampG([snap(g[0], 0.25), snap(g[1], 0.25)]);
+      if (!ED.cut) { if (!onRoad(g)) { flash('Start a shortcut on the road.', true); return; } ED.cut = [q]; }
+      else { ED.cut.push(q); if (onRoad(g) && ED.cut.length >= 2) { push(); D.cuts.push(ED.cut); ED.cut = null; flash('Shortcut added (it becomes a dirt lane with a rail on both sides).'); } }
+    } else if (T === 'erase') {
+      for (const k of ['pickAt', 'coneAt', 'lampAt', 'umbAt', 'treeAt']) { const i = near(D[k], g, k === 'treeAt' || k === 'umbAt' ? 0.3 : 0.18); if (i >= 0) { push(); D[k].splice(i, 1); return; } }
+      for (let c = 0; c < D.cuts.length; c++) if (D.cuts[c].some((q, j) => j && segDist(D.cuts[c][j - 1], q, g) < 0.35)) { push(); D.cuts.splice(c, 1); return; }
+      const i = near(D.pts, g, rad); if (i >= 0 && D.pts.length > 3) { push(); D.pts.splice(i, 1); }
+    } else {
+      const q = clampG([snap(g[0], 0.05), snap(g[1], 0.05)]);
+      push();
+      if (T === 'tree') D.treeAt.push([q[0], q[1], D.treeAt.length % 3]);
+      else if (T === 'umb') D.umbAt.push([q[0], q[1], ED.umb]);
+      else if (T === 'cone') D.coneAt.push(q);
+      else if (T === 'pick') D.pickAt.push([q[0], q[1], ED.pk === 'R' ? '' : ED.pk]);
+      else if (T === 'lamp') D.lampAt.push(q);
+      if (T === 'tree' || T === 'umb' || T === 'lamp') { const w = RR.toWorld(q), sh = RR.trackShape(D); if (sh && onRoad(q)) flash('Tip: trees, umbrellas and lights look best off the road (they are not solid).'); }
+    }
+    ED.dirty = true;
+  };
+  const segDist = (a, b, g) => { const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy || 1, t = Math.max(0, Math.min(1, ((g[0] - a[0]) * vx + (g[1] - a[1]) * vy) / L2)); return Math.hypot(a[0] + vx * t - g[0], a[1] + vy * t - g[1]); };
+  cv.onpointermove = e => {
+    const p = evPos(e), g = toG(p[0], p[1]); ED.mouse = g;
+    if (ED.drag && ED.drag.pan) { ED.ox = ED.drag.ox + p[0] - ED.drag.sx; ED.oy = ED.drag.oy + p[1] - ED.drag.sy; }
+    else if (ED.drag && ED.drag.pt != null) { ED.d.pts[ED.drag.pt] = clampG([snap(g[0], 0.5), snap(g[1], 0.5)]); }
+    ED.dirty = true;
+  };
+  cv.onpointerup = () => { ED.drag = null; ED.dirty = true; };
+  ED.key = e => {
+    if (!document.getElementById('rr-ed') || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName)) return;
+    if (e.key === 'Escape') { if (ED.cut) { ED.cut = null; ED.dirty = true; } else setTool('road'); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+    else if (e.key === '+' || e.key === '=') zoom(1.2); else if (e.key === '-') zoom(1 / 1.2);
+    else { const t = { 1: 'road', 2: 'cut', 3: 'tree', 4: 'umb', 5: 'cone', 6: 'pick', 7: 'lamp', 8: 'erase', 9: 'pan' }[e.key]; if (t) setTool(t); }
+    e.stopPropagation();
+  };
+  root.addEventListener('keydown', e => e.stopPropagation());
+  window.addEventListener('keydown', ED.key, true);
+  let flashT = 0, flashMsg = '', flashBad = false;
+  const flash = (m, bad) => { flashMsg = m; flashBad = bad; flashT = performance.now() + 3500; ED.dirty = true; };
+  ED.flash = flash;
+  const frame = () => {
+    if (!document.getElementById('rr-ed')) { window.removeEventListener('keydown', ED.key, true); return; }
+    ED.raf = requestAnimationFrame(frame);
+    const r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (cv.width !== Math.round(r.width * dpr) || cv.height !== Math.round(r.height * dpr)) { cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); if (ED.s == null) fit(); ED.dirty = true; }
+    if (!ED.dirty && performance.now() > flashT + 100) return;
+    ED.dirty = false;
+    const D = ED.d, col = THEME_COL[D.theme] || THEME_COL.grass, chk = check(D);
+    x.setTransform(dpr, 0, 0, dpr, 0, 0); x.fillStyle = '#0c0202'; x.fillRect(0, 0, r.width, r.height);
+    x.fillStyle = col[0]; x.fillRect(ED.ox, ED.oy, MAXX * ED.s + ED.s * 0.5, MAXY * ED.s + ED.s * 0.5);
+    // grid
+    x.lineWidth = 1;
+    for (let gx = 0; gx <= MAXX; gx++) { x.strokeStyle = gx % 5 ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.18)'; x.beginPath(); x.moveTo(ED.ox + gx * ED.s, ED.oy); x.lineTo(ED.ox + gx * ED.s, ED.oy + MAXY * ED.s); x.stroke(); }
+    for (let gy = 0; gy <= MAXY; gy++) { x.strokeStyle = gy % 5 ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.18)'; x.beginPath(); x.moveTo(ED.ox, ED.oy + gy * ED.s); x.lineTo(ED.ox + MAXX * ED.s, ED.oy + gy * ED.s); x.stroke(); }
+    // track in world units: grid unit = U world px; world 0 = grid (1 - MARGIN)
+    const ws = ED.s / U, w0 = RR.toWorld([0, 0]);
+    x.setTransform(dpr * ws, 0, 0, dpr * ws, dpr * (ED.ox - w0[0] * ws), dpr * (ED.oy - w0[1] * ws));
+    drawTrack(x, D, { arrows: true, grid: true, labels: true, bad: chk.bad });
+    if (ED.cut) { x.strokeStyle = 'rgba(168,135,90,0.8)'; x.lineWidth = D.w * 0.62; x.lineCap = 'butt'; x.beginPath(); ED.cut.concat(ED.mouse ? [ED.mouse] : []).forEach((q, i) => { const w = RR.toWorld(q); i ? x.lineTo(w[0], w[1]) : x.moveTo(w[0], w[1]); }); x.stroke(); }
+    if (D.time === 'night') { x.setTransform(dpr, 0, 0, dpr, 0, 0); x.fillStyle = 'rgba(10,15,50,0.25)'; x.fillRect(ED.ox, ED.oy, MAXX * ED.s, MAXY * ED.s); }
+    // corner handles (green = start corner)
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    D.pts.forEach((q, i) => { const px = ED.ox + q[0] * ED.s, py = ED.oy + q[1] * ED.s;
+      x.fillStyle = i === 0 ? '#3cdc4a' : '#ffcf40'; x.strokeStyle = '#000'; x.lineWidth = 2; x.beginPath(); x.arc(px, py, ED.tool === 'road' ? 7 : 4, 0, 7); x.fill(); x.stroke();
+      if (ED.tool === 'road') { x.fillStyle = '#000'; x.font = 'bold 9px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(i + 1, px, py + 0.5); } });
+    // status line
+    const tip = (TOOLS.find(t => t[0] === ED.tool) || [, , ''])[2];
+    let html = performance.now() < flashT ? '<span class="' + (flashBad ? 'err' : 'warn') + '">' + esc(flashMsg) + '</span>' : esc(ED.startPick ? 'Click a stretch of road: the start line goes there.' : tip);
+    if (chk.errs.length) html += ' &nbsp; <span class="err">' + esc(chk.errs[0]) + '</span>'; else if (chk.warn.length) html += ' &nbsp; <span class="warn">' + esc(chk.warn[0]) + '</span>';
+    if (status.innerHTML !== html) status.innerHTML = html;
+    $('#un').disabled = !ED.undo.length;
+  };
+  frame();
+  setTimeout(fit, 30);
+}
+RR.Editor = { openList, edit, playDef, store, check, closeAll, packCode, unpackCode, view: () => ED };
+})();
+
 // Game shell: display, input, screens, HUD, save data, main loop, test hooks.
 'use strict';
 (function () {
@@ -1265,6 +2092,23 @@ const defSave = () => ({ unlocked: 0, stars: Array(18).fill(0), best: Array(18).
 let save = defSave();
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s) save = Object.assign(defSave(), s); } catch (e) {}
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
+// Ghosts: your best run on each track, 20 samples/s of x*10, y*10, angle*1000 as Int16, base64 in localStorage
+const GHOST_KEY = i => 'rr_ghost_' + i;
+function saveGhost(i, rec, time, carId) {
+  try {
+    const a = new Int16Array(rec), b = new Uint8Array(a.buffer); let s = '';
+    for (let k = 0; k < b.length; k += 8192) s += String.fromCharCode.apply(null, b.subarray(k, k + 8192));
+    localStorage.setItem(GHOST_KEY(i), JSON.stringify({ time, carId, d: btoa(s) }));
+  } catch (e) {}
+}
+function hasGhost(i) { try { return !!localStorage.getItem(GHOST_KEY(i)); } catch (e) { return false; } }
+function loadGhost(i) {
+  try {
+    const o = JSON.parse(localStorage.getItem(GHOST_KEY(i)) || 'null'); if (!o) return null;
+    const bin = atob(o.d), b = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) b[k] = bin.charCodeAt(k);
+    return { time: o.time, carId: o.carId, samples: new Int16Array(b.buffer) };
+  } catch (e) { return null; }
+}
 if (save.sfxVol == null) save.sfxVol = save.sfx === false ? 0 : 10;
 if (save.musicVol == null) save.musicVol = save.music === false ? 0 : 8;
 function applyVolumes() { A.sfxVol = save.sfxVol / 10; A.sfx = save.sfxVol > 0; A.musicVol = save.musicVol / 10 * 1.0; A.music = save.musicVol > 0; A.apply(); A.applyMusicVol(); }
@@ -1288,7 +2132,10 @@ function resize() {
   const cw = Math.round(VW * sc), ch = Math.round(VH * sc);
   canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
   canvas.style.transform = ROT ? 'rotate(' + ROT + 'deg)' : '';
-  canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+  // drawing resolution: full sharpness up to about 1080p (HD) / 720p (Fast); bigger screens are scaled up by the browser
+  const maxPx = (typeof save !== 'undefined' && save.gfx === 'fast') ? 1280 * 720 : 1920 * 1080;
+  const px = Math.min(dpr, Math.sqrt(maxPx / (cw * ch)));
+  canvas.width = Math.round(cw * Math.max(0.5, px)); canvas.height = Math.round(ch * Math.max(0.5, px));
   S = canvas.width / VW;
 }
 window.addEventListener('resize', resize); window.addEventListener('orientationchange', () => setTimeout(resize, 150)); resize();
@@ -1296,6 +2143,10 @@ window.addEventListener('resize', resize); window.addEventListener('orientationc
 // ---------------- input ----------------
 const keys = {};
 window.addEventListener('keydown', e => {
+  if (NET.overlay || document.getElementById('rr-ed') || document.getElementById('rr-tl')) return;
+  const ae = document.activeElement; if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
+  if (state.net && e.code === 'KeyT' && !keys[e.code]) { e.preventDefault(); chatType(); return; }
+  if (state.net && !keys[e.code] && (e.code === 'KeyQ' || e.code === 'KeyE')) { sendChat(e.code === 'KeyQ' ? 'preset' : 'custom'); keys[e.code] = true; return; }
   A.init(); A.setMusic(musicModeFor(state.screen));
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (!keys[e.code]) onPress(e.code);
@@ -1303,8 +2154,8 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 function clearInput() { for (const k in keys) keys[k] = false; }
-window.addEventListener('blur', () => { clearInput(); if (state.screen === 'race' && state.race && state.race.phase !== 'finished') state.paused = true; });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); if (state.screen === 'race') state.paused = true; } });
+window.addEventListener('blur', () => { clearInput(); if (state.screen === 'race' && state.race && state.race.phase !== 'finished' && state.race.mode !== 'net') state.paused = true; });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); if (state.screen === 'race' && !(state.race && state.race.mode === 'net')) state.paused = true; } });
 
 function padState(i) {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -1407,10 +2258,11 @@ function optionsButtons(back) {
       B(150, 76, 180, 24, 'Music Volume: ' + save.musicVol, () => adjustVol('musicVol', +1, true), { vol: 'musicVol' }),
       B(150, 106, 180, 24, 'Voice: ' + ({ male: 'Male', female: 'Female', off: 'Off' })[save.voice || 'male'], () => { const order = ['male', 'female', 'off']; save.voice = order[(order.indexOf(save.voice || 'male') + 1) % 3]; A.voice = save.voice; persist(); A.say(save.voice === 'off' ? '' : 'Speed up'); }),
       ...(RR.MOBILE ? [B(150, 136, 180, 22, 'Song: ' + A.SONGS[A.songIdx].name, () => A.stepSong(1), { song: 1 })] : []),
-      B(150, 160, 180, 22, RR.MOBILE ? 'Fullscreen' : 'PC: Fullscreen', () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }),
-      B(150, 185, 180, 22, RR.MOBILE ? 'Reset Progress' : 'PC: Reset Progress', () => askConfirm('Reset ALL progress?\nUnlocked races, stars, best times and\nunlocked cars will be lost. This cannot be undone.', 'Yes, reset', () => { const s = save; save = defSave(); save.sfxVol = s.sfxVol; save.musicVol = s.musicVol; save.voice = s.voice; persist(); notice('Progress reset.'); })),
-      B(170, 210, 140, 22, 'Controls & Credits', () => { state.info = true; }, { blue: 1 }),
-      B(190, 240, 100, 24, 'Back', back),
+      B(150, 146, 180, 20, 'Graphics: ' + (save.gfx === 'fast' ? 'Fast' : 'HD'), () => { save.gfx = save.gfx === 'fast' ? 'hd' : 'fast'; persist(); resize(); }),
+      B(150, 170, 180, 20, RR.MOBILE ? 'Fullscreen' : 'PC: Fullscreen', () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }),
+      B(150, 194, 180, 20, RR.MOBILE ? 'Reset Progress' : 'PC: Reset Progress', () => askConfirm('Reset ALL progress?\nUnlocked races, stars, best times and\nunlocked cars will be lost. This cannot be undone.', 'Yes, reset', () => { const s = save; save = defSave(); save.sfxVol = s.sfxVol; save.musicVol = s.musicVol; save.voice = s.voice; persist(); notice('Progress reset.'); })),
+      B(170, 218, 140, 20, 'Controls & Credits', () => { state.info = true; }, { blue: 1 }),
+      B(190, 243, 100, 22, 'Back', back),
   ];
 }
 function askConfirm(text, yesLabel, yes, noLabel, no) { state.confirm = { text, yesLabel, yes, noLabel, no }; state.focus = 0; A.play('back'); }
@@ -1441,7 +2293,8 @@ function buttonsLandscape() {
       B(246, 118, 106, 36, '2 Player', () => { if (RR.MOBILE) { notice('2 Player split-screen is in the\nPC version.'); return; } state.twoPlayer = true; state.selPlayer = 0; go('carselect'); }, { big: 1 }),
       B(160, 162, 100, 32, 'Options', () => go('options'), { big: 1 }),
       B(272, 162, 44, 32, '', () => notice('Language: English is the only\nlanguage available in this recreation.'), { flag: 1 }),
-      B(188, 214, 104, 34, 'Buy', () => notice(PLATFORM_MSG), { big: 1 }),
+      B(128, 210, 106, 32, 'Wi-Fi Race', () => netOverlay(), { big: 1 }),
+      B(246, 210, 106, 32, 'Track Maker', () => RR.Editor.openList(), { big: 1 }),
       B(8, 6, 92, 20, 'Leaderboards', () => notice(PLATFORM_MSG)),
       B(380, 6, 92, 20, 'Achievements', () => notice(PLATFORM_MSG)),
       B(8, 244, 60, 20, 'News', () => notice(PLATFORM_MSG)),
@@ -1450,33 +2303,45 @@ function buttonsLandscape() {
     case 'options': return optionsButtons(() => go('menu'));
     case 'carselect': {
       const out = RR.CAR_ORDER.map((id, i) => B(88 + i * 52, 166, 44, 40, '', () => { selectCar(id); }, { team: id }));
-      out.push(B(16, 226, 74, 34, 'Back', () => { if (state.selPlayer === 1) state.selPlayer = 0; else go('menu'); }));
+      out.push(B(16, 226, 74, 34, 'Back', () => { if (state.selPlayer === 1) state.selPlayer = 0; else if (state.custom && !state.net) backToCustom(); else go('menu'); }));
       out.push(B(320, 222, 144, 40, 'Play', () => pickCar(), { big: 1 }));
       return out;
     }
     case 'trackselect': {
       const out = [];
       for (let i = 0; i < 18; i++) {
-        const c = i % 6, r = (i / 6) | 0, locked = !state.twoPlayer && i > save.unlocked;
-        out.push(B(30 + c * 72, 46 + r * 60, 66, 52, String(i + 1), () => { if (locked) { notice('Finish in the top 3 of race ' + i + '\nto unlock race ' + (i + 1) + '.'); return; } startRace(i); }, { track: i, locked }));
+        const c = i % 6, r = (i / 6) | 0, locked = !state.twoPlayer && !state.net && i > save.unlocked;
+        out.push(B(30 + c * 72, 46 + r * 60, 66, 52, String(i + 1), () => { if (locked) { notice('Finish in the top 3 of race ' + i + '\nto unlock race ' + (i + 1) + '.'); return; } if (state.net) netPickRace(i); else if (state.ghostMode && !state.twoPlayer) startGhostRace(i); else startRace(i); }, { track: i, locked, ghost: !state.net && !state.twoPlayer && hasGhost(i) }));
       }
       out.push(B(190, 232, 100, 28, 'Back', () => go('carselect')));
-      if (RR.VIDEO_TEST) out.push(B(330, 232, 120, 28, 'Video Test', () => { askConfirm('Your RR2 recording, recreated.\nReplay = my car repeats your exact button presses\n(the dashed line is where your real car went). Drive = try it yourself.', 'Drive it', () => startVideoTest('drive'), 'Replay video', () => startVideoTest('replay')); state.confirm.title = 'VIDEO TEST'; }, { blue: 1 }));
+      if (state.net && NET.role === 'host') out.push(B(30, 232, 130, 28, 'My Tracks', () => RR.Editor.openList({ net: true, onPick: def => netPickRace(-1, def), onBack: () => {} }), { blue: 1 }));
+      if (!state.net && !state.twoPlayer) out.push(B(30, 232, 130, 28, state.ghostMode ? 'Ghost: ON' : 'Ghost: OFF', () => { state.ghostMode = !state.ghostMode; if (state.ghostMode) notice('Ghost mode ON: pick a race to race your best time.\nRaces with a ghost show a little ghost icon.'); }, { blue: !state.ghostMode }));
+      if (RR.VIDEO_TEST && !state.net) out.push(B(330, 232, 120, 28, 'Video Test', () => { askConfirm('Your RR2 recording, recreated.\nReplay = my car repeats your exact button presses\n(the dashed line is where your real car went). Drive = try it yourself.', 'Drive it', () => startVideoTest('drive'), 'Replay video', () => startVideoTest('replay')); state.confirm.title = 'VIDEO TEST'; }, { blue: 1 }));
       return out;
     }
     case 'race':
       if (state.paused && state.pauseOpts) return optionsButtons(() => { state.pauseOpts = false; state.focus = 3; });
       if (state.paused) return [
         B(180, 80, 120, 26, 'Resume', () => { state.paused = false; clearInput(); }),
-        B(180, 111, 120, 26, 'Restart', () => state.race.video ? startVideoTest(state.videoMode === 'replay' ? 'replay' : 'drive') : startRace(state.track)),
-        B(180, 142, 120, 26, 'Quit', () => { state.race = null; state.videoMode = null; go('trackselect'); }),
+        B(180, 111, 120, 26, 'Restart', () => state.race.mode === 'net' ? notice('A Wi-Fi race can\'t be restarted.\nThe host can pick the next race when it ends.') : state.race.video ? startVideoTest(state.videoMode === 'replay' ? 'replay' : 'drive') : state.race.custom ? startCustom() : startRace(state.track)),
+        B(180, 142, 120, 26, 'Quit', () => { if (state.race.mode === 'net') { netLeave(); return; } if (state.race.custom) { backToCustom(); return; } state.race = null; state.videoMode = null; go('trackselect'); }),
         B(180, 173, 120, 26, 'Options', () => { state.pauseOpts = true; state.focus = 0; }),
       ].concat(RR.MOBILE ? [B(150, 206, 180, 24, 'Song: ' + A.SONGS[A.songIdx].name, () => A.stepSong(1), { song: 1 })] : []);
       return [];
+    case 'netwait': return [B(190, 232, 100, 28, 'Leave', () => netLeave())];
     case 'results': {
+      const R = state.result;
+      if (R && R.mode === 'ghost') return [B(16, 226, 74, 34, 'Back', () => { state.race = null; go('trackselect'); }, { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startGhostRace(state.track), { blue: 1 }),
+        B(320, 222, 144, 40, 'Race Bots', () => startRace(state.track), { big: 1, blue: 1 })];
+      if (R && R.mode === 'net') return NET.role === 'host'
+        ? [B(16, 226, 74, 34, 'Leave', () => netLeave(), { blue: 1 }), B(320, 222, 144, 40, 'Next Race', () => { netEvent({ type: 'back' }); state.race = null; go('trackselect'); state.focus = state.track; }, { big: 1, blue: 1 })]
+        : [B(16, 226, 74, 34, 'Leave', () => netLeave(), { blue: 1 })];
+      if (state.race && state.race.custom) return [B(16, 226, 74, 34, 'Back', () => backToCustom(), { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startCustom(), { blue: 1 })]
+        .concat(state.custom && state.custom.from === 'editor' ? [B(320, 222, 144, 40, 'Edit Track', () => backToCustom(), { big: 1, blue: 1 })] : []);
       const list = [B(16, 226, 74, 34, 'Back', () => { state.race = null; go('trackselect'); }, { blue: 1 }),
                     B(98, 226, 74, 34, 'Retry', () => startRace(state.track), { blue: 1 })];
       if (state.track < 17 && (state.twoPlayer || state.track + 1 <= save.unlocked)) list.push(B(320, 222, 144, 40, 'Next', () => startRace(state.track + 1), { big: 1, blue: 1 }));
+      if (!state.twoPlayer && hasGhost(state.track)) list.push(B(180, 226, 104, 34, 'vs Ghost', () => startGhostRace(state.track), { blue: 1 }));
       return list;
     }
   }
@@ -1484,16 +2349,18 @@ function buttonsLandscape() {
 }
 // Phone (portrait 270x480) positions, by screen, in the same order as the landscape lists.
 const PORTRAIT = {
-  menu: [[14, 236, 116, 40], [140, 236, 116, 40], [44, 290, 110, 36], [164, 290, 56, 36], [80, 380, 110, 40], [4, 4, 92, 20], [174, 4, 92, 20], [4, 454, 56, 22], [210, 454, 56, 22]],
-  options: [[45, 56, 180, 28], [45, 90, 180, 28], [45, 124, 180, 28], [45, 158, 180, 28], [45, 206, 180, 26], [45, 238, 180, 26], [65, 280, 140, 28], [85, 430, 100, 32]],
+  menu: [[14, 236, 116, 40], [140, 236, 116, 40], [44, 290, 110, 36], [164, 290, 56, 36], [14, 370, 116, 40], [140, 370, 116, 40], [4, 4, 92, 20], [174, 4, 92, 20], [4, 454, 56, 22], [210, 454, 56, 22]],
+  options: [[45, 56, 180, 28], [45, 88, 180, 28], [45, 120, 180, 28], [45, 152, 180, 28], [45, 184, 180, 28], [45, 222, 180, 26], [45, 254, 180, 26], [65, 292, 140, 28], [85, 430, 100, 32]],
   carselect: [[33, 262, 60, 44], [105, 262, 60, 44], [177, 262, 60, 44], [33, 322, 60, 44], [105, 322, 60, 44], [177, 322, 60, 44], [10, 424, 80, 40], [130, 418, 130, 48]],
   race: [[65, 146, 140, 34], [65, 188, 140, 34], [65, 230, 140, 34], [65, 272, 140, 34], [35, 326, 200, 32]],
-  results: [[8, 424, 76, 40], [92, 424, 76, 40], [176, 418, 86, 48]],
+  results: [[8, 424, 76, 40], [92, 424, 76, 40], [176, 418, 86, 48], [8, 372, 160, 40]],
+  netwait: [[85, 432, 100, 32]],
 };
 function relayout(list) {
   const sc = state.screen === 'race' && state.pauseOpts ? 'options' : state.screen;
   if (sc === 'trackselect') {
-    list.forEach((b, i) => { if (i < 18) Object.assign(b, { x: 15 + (i % 3) * 84, y: 44 + ((i / 3) | 0) * 62, w: 78, h: 56 }); else if (i === 18) Object.assign(b, list.length > 19 ? { x: 18, y: 432, w: 108, h: 32 } : { x: 85, y: 432, w: 100, h: 32 }); else Object.assign(b, { x: 142, y: 432, w: 110, h: 32 }); });
+    const extra = list.length - 18, row = [[85, 100], [18, 108, 142, 110], [8, 80, 95, 80, 182, 80]][Math.max(0, extra - 1)] || [85, 100];
+    list.forEach((b, i) => { if (i < 18) Object.assign(b, { x: 15 + (i % 3) * 84, y: 44 + ((i / 3) | 0) * 62, w: 78, h: 56 }); else { const k = i - 18; Object.assign(b, { x: row[k * 2], y: 432, w: row[k * 2 + 1], h: 32 }); } });
     return list;
   }
   const P = PORTRAIT[sc]; if (!P) return list;
@@ -1514,6 +2381,8 @@ function pickCar() {
   { const id = state.carSel[state.selPlayer]; if (carLocked(id)) { const c = RR.CARS[id]; notice(c.name + ' is locked.\nFinish ' + c.unlock + ' races in the top 3 to unlock it\n(' + racesDone() + ' / ' + c.unlock + ' done).'); return; } }
   if (state.twoPlayer && state.selPlayer === 0) { state.selPlayer = 1; if (state.carSel[1] === state.carSel[0]) cycleCar(1); state.focus = 7; return; }
   save.lastCar = state.carSel[0]; persist();
+  if (state.custom && !state.net) { save.lastCar = state.carSel[0]; persist(); startCustom(); return; }
+  if (state.net) { if (NET.role === 'host') { NET.roster[0] = { car: state.carSel[0] }; netBroadcastRoster(); go('trackselect'); state.focus = state.track || 0; } else { netEvent({ type: 'car', car: state.carSel[0] }); state.screen = 'netwait'; state.focus = 0; } return; }
   state.track = state.twoPlayer ? state.track : Math.min(save.unlocked, 17);
   go('trackselect'); state.focus = state.twoPlayer ? state.track : Math.min(save.unlocked, 17);
 }
@@ -1565,7 +2434,27 @@ function onPress(code) {
 }
 
 // ---------------- race management ----------------
+const raceLabel = race => race && race.custom ? (race.T.def.name || 'My Track') : 'Race ' + ((race ? race.trackIndex : state.track) + 1);
+function playCustom(def, how) {   // from the track maker / My Tracks
+  state.custom = Object.assign({ def }, how || {}); state.twoPlayer = false; state.selPlayer = 0;
+  if (how && how.test) startCustom(); else { A.play('menu'); go('carselect'); }
+}
+function startCustom(seed) {
+  const C = state.custom, pd = RR.Editor.playDef(C.def); if (C.test) pd.bots = 0;
+  state.track = -1; state.paused = false; state.pauseOpts = false; clearInput();
+  const players = state.twoPlayer ? [{ carId: state.carSel[0] }, { carId: state.carSel[1] }] : [{ carId: state.carSel[0] }];
+  state.race = RR.createRace({ trackIndex: 0, trackDef: pd, players, twoPlayer: state.twoPlayer, raceSeed: seed });
+  state.cams = state.race.cars.filter(c => c.player >= 0).sort((a, b) => a.player - b.player).map(c => ({ car: c, x: c.x, y: c.y }));
+  state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null;
+  A.setMusic('game'); A.setEngines(state.cams.length);
+}
+function backToCustom() {
+  const C = state.custom; state.race = null; state.result = null; A.stopEngines(); A.setMusic('menu'); go('menu');
+  if (C && C.from === 'editor') { const fresh = RR.Editor.store.load().find(t => t.id === C.def.id) || C.def; RR.Editor.edit(fresh); } else RR.Editor.openList();
+}
+RR.game = { playCustom, toMenu: () => go('menu') };
 function startRace(ti, seed) {
+  state.custom = null;
   state.track = ti; state.paused = false; state.pauseOpts = false; clearInput();
   const players = state.twoPlayer ? [{ carId: state.carSel[0] }, { carId: state.carSel[1] }] : [{ carId: state.carSel[0] }];
   state.race = RR.createRace({ trackIndex: ti, players, twoPlayer: state.twoPlayer, raceSeed: seed });
@@ -1573,8 +2462,348 @@ function startRace(ti, seed) {
   state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null;
   A.setMusic('game'); A.setEngines(state.cams.length);
 }
+
+// ================= Wi-Fi rooms: up to 6 players (WebRTC; host connects to everyone and relays) =================
+// Pairing: short room code through a public relay (ntfy.sh, only the connection details pass through it - the race itself
+// goes straight between the devices), or offline long codes for 2 players.
+const NET = { role: null, ok: false, myId: 0, max: 6, peers: [], host: null, overlay: null, sendT: 0, roster: {}, room: null, es: null, chat: [], nextId: 1 };
+RR.RELAY = RR.RELAY || 'https://ntfy.sh/';
+const CHAT_PRESETS = ['Good luck!', 'See you later!', "Let's go!", 'Ready!', 'GG!', 'Nice race!', 'Rematch?', 'Watch out!', 'Catch me if you can!', 'Ha ha!'];
+function netSend(ch, m) { try { if (ch && ch.readyState === 'open') ch.send(typeof m === 'string' ? m : JSON.stringify(m)); } catch (e) {} }
+function netEvent(m) {   // reliable message from me to everyone
+  m.id = NET.myId;
+  if (NET.role === 'host') { const s = JSON.stringify(m); NET.peers.forEach(p => netSend(p.ev, s)); } else if (NET.host) netSend(NET.host.ev, m);
+}
+function netStateOut(m) {
+  m.id = NET.myId;
+  if (NET.role === 'host') { const s = JSON.stringify(m); NET.peers.forEach(p => netSend(p.st, s)); } else if (NET.host) netSend(NET.host.st, m);
+}
+async function netPack(desc) {
+  const txt = JSON.stringify({ t: desc.type, s: desc.sdp });
+  try {
+    const cs = new Blob([txt]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    const b = new Uint8Array(await new Response(cs).arrayBuffer()); let s = ''; b.forEach(x => s += String.fromCharCode(x));
+    return 'RR1' + btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch (e) { return 'RR0' + btoa(txt); }
+}
+async function netUnpack(code) {
+  code = (code || '').trim().replace(/\s+/g, '');
+  let txt;
+  if (code.startsWith('RR1')) {
+    const b64 = code.slice(3).replace(/-/g, '+').replace(/_/g, '/'), bin = atob(b64 + '==='.slice((b64.length + 3) % 4)), b = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) b[k] = bin.charCodeAt(k);
+    txt = await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  } else if (code.startsWith('RR0')) txt = atob(code.slice(3)); else throw new Error('not a Retro Racing code');
+  const o = JSON.parse(txt); return { type: o.t, sdp: o.s };
+}
+function netWaitIce(pc) { return new Promise(res => { if (pc.iceGatheringState === 'complete') return res(); const t = setTimeout(res, 2500); pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } }); }); }
+function netNewPC(link) {
+  const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+  pc.addEventListener('connectionstatechange', () => { if (['failed', 'disconnected', 'closed'].includes(pc.connectionState) && link.open) netLinkDown(link); });
+  link.pc = pc; return pc;
+}
+function netHook(link, ch) {
+  if (ch.label === 'ev') link.ev = ch; else link.st = ch;
+  ch.onmessage = e => { try { netIncoming(link, JSON.parse(e.data)); } catch (x) {} };
+  ch.onopen = () => { if (link.ev && link.ev.readyState === 'open' && link.st && link.st.readyState === 'open' && !link.open) { link.open = true; netLinkUp(link); } };
+  ch.onclose = () => { if (link.open) netLinkDown(link); };
+}
+// ---- host side: one link per guest ----
+async function netHostOffer(link) {
+  const pc = netNewPC(link);
+  netHook(link, pc.createDataChannel('ev')); netHook(link, pc.createDataChannel('st', { ordered: false, maxRetransmits: 0 }));
+  await pc.setLocalDescription(await pc.createOffer()); await netWaitIce(pc);
+  return netPack(pc.localDescription);
+}
+// ---- guest side ----
+async function netGuestAnswer(code) {
+  const link = NET.host = { open: false };
+  const pc = netNewPC(link); pc.ondatachannel = e => netHook(link, e.channel);
+  await pc.setRemoteDescription(await netUnpack(code));
+  await pc.setLocalDescription(await pc.createAnswer()); await netWaitIce(pc);
+  return netPack(pc.localDescription);
+}
+function netLinkUp(link) {
+  if (NET.role === 'host') {
+    link.id = NET.nextId++; NET.peers.push(link);
+    netSend(link.ev, { type: 'welcome', you: link.id, max: NET.max });
+    NET.roster[link.id] = { car: null };
+    netBroadcastRoster(); addChat(-1, 'P' + (link.id + 1) + ' joined');
+    if (!state.net) { NET.ok = true; state.net = true; }
+    netOverlayRefresh();
+  } else {
+    NET.ok = true;
+  }
+}
+function netLinkDown(link) {
+  link.open = false;
+  if (NET.role === 'host') {
+    NET.peers = NET.peers.filter(p => p !== link);
+    if (link.id != null) { delete NET.roster[link.id]; netBroadcastRoster(); addChat(-1, 'P' + (link.id + 1) + ' left'); netEvent({ type: 'left', who: link.id }); }
+    netMarkLeft(link.id);
+    netOverlayRefresh();
+  } else if (state.net || NET.ok) netLost('The host left or the connection was lost.');
+}
+function netBroadcastRoster() {
+  NET.roster[0] = NET.roster[0] || { car: null };
+  const players = Object.keys(NET.roster).map(Number).sort((a, b) => a - b).map(id => ({ id, car: NET.roster[id].car }));
+  const s = JSON.stringify({ type: 'roster', players, max: NET.max, id: 0 }); NET.peers.forEach(p => netSend(p.ev, s));
+  NET.rosterList = players;
+}
+function netIncoming(link, m) {
+  if (NET.role === 'host') {   // tag with the sender, use it, and pass it on to everyone else
+    if (m.type === 'welcome' || m.type === 'roster' || m.type === 'start') return;
+    m.id = link.id;
+    if (m.type === 'car') { NET.roster[link.id] = { car: m.car }; netBroadcastRoster(); }
+    const s = JSON.stringify(m);
+    NET.peers.forEach(p => { if (p !== link) netSend(m.type === 's' ? p.st : p.ev, s); });
+  }
+  netApply(m);
+}
+function netApply(m) {
+  const race = state.race, net = race && race.mode === 'net';
+  const puppet = id => net ? race.cars.find(c => c.netId === id && c.puppet) : null;
+  if (m.type === 's') { const c = puppet(m.id); if (c) { c.netBuf.push(m); if (c.netBuf.length > 40) c.netBuf.shift(); } }
+  else if (m.type === 'welcome') { NET.myId = m.you; NET.max = m.max; netGuestReady(); }
+  else if (m.type === 'roster') { NET.rosterList = m.players; NET.max = m.max; }
+  else if (m.type === 'start') startNetRace(m);
+  else if (m.type === 'pk') { const p = net && race.pickups[m.i]; if (p && p.active) { p.active = false; p.t = RR.PICKUP_RESPAWN; } }
+  else if (m.type === 'fin') { const c = puppet(m.id); if (c) c.netFin = m.t; if (state.result && state.result.mode === 'net') state.result.times[m.id] = m.t; }
+  else if (m.type === 'chat') addChat(m.id, m.text);
+  else if (m.type === 'back') { if (state.screen === 'results' || state.screen === 'race') { state.race = null; state.screen = 'netwait'; state.focus = 0; } }
+  else if (m.type === 'left') { netMarkLeft(m.who); addChat(-1, 'P' + (m.who + 1) + ' left'); }
+  else if (m.type === 'bye' && NET.role !== 'host') netLost('The host closed the room.');
+}
+function netMarkLeft(id) {
+  const r = state.race, c = r && r.mode === 'net' && r.cars.find(k => k.netId === id); if (c) c.left = true;
+  if (state.result && state.result.mode === 'net' && state.result.left) state.result.left[id] = 1;
+  if (NET.rosterList) NET.rosterList = NET.rosterList.filter(p => p.id !== id);
+}
+function netGuestReady() {
+  state.net = true; state.twoPlayer = false; state.selPlayer = 0;
+  if (NET.es) { NET.es.close(); NET.es = null; }
+  netOverlayClose(); A.play('menu'); go('carselect');
+  notice('You joined the room as Player ' + (NET.myId + 1) + '!\nPick your car - the host picks the race.\nQ / E send your quick chats.');
+}
+function netCloseAll() {
+  NET.ok = false;
+  const kill = l => { try { l.ev && l.ev.close(); l.st && l.st.close(); l.pc && l.pc.close(); } catch (e) {} l.open = false; };
+  NET.peers.forEach(kill); if (NET.host) kill(NET.host);
+  if (NET.es) { NET.es.close(); NET.es = null; }
+  NET.peers = []; NET.host = null; NET.roster = {}; NET.rosterList = []; NET.nextId = 1; NET.myId = 0; NET.role = null; state.net = false;
+  chatPanel(false);
+}
+function netLost(msg) { if (!state.net && !NET.ok) return; netCloseAll(); state.race = null; netOverlayClose(); go('menu'); notice('Wi-Fi race: ' + msg); }
+function netLeave() { netEvent({ type: 'bye' }); setTimeout(netCloseAll, 150); state.race = null; go('menu'); }
+function netPlayers() { return (NET.rosterList || []).filter(p => p.id === 0 || NET.role !== 'host' || NET.peers.some(l => l.id === p.id)); }
+function startNetRace(m) {
+  state.track = m.track; state.paused = false; state.pauseOpts = false; clearInput(); state.twoPlayer = false;
+  state.race = RR.createRace({ trackIndex: m.def ? 0 : m.track, trackDef: m.def, mode: 'net', netPlayers: m.players, myId: NET.myId, raceSeed: m.seed, players: [{ carId: state.carSel[0] }] });
+  state.cams = [{ car: state.race.cars.find(c => c.player === 0) }]; state.cams[0].x = state.cams[0].car.x; state.cams[0].y = state.cams[0].car.y;
+  state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null; NET.sendT = 0;
+  A.setMusic('game'); A.setEngines(1);
+}
+function netPickRace(i, def) {   // host picked a race (or one of their own tracks)
+  const players = netPlayers();
+  if (players.length < 2) { notice('Nobody has joined your room yet.\nRoom code: ' + (NET.room || '-')); return; }
+  const missing = players.filter(p => p.car == null).map(p => 'P' + (p.id + 1));
+  if (missing.length) { notice('Waiting for ' + missing.join(', ') + ' to pick a car...'); return; }
+  if (NET.es) { NET.es.close(); NET.es = null; }   // room closes to new players once racing
+  const m = { type: 'start', track: i, seed: (Math.random() * 0xffffff) | 0, players: players.map(p => ({ id: p.id, car: p.car })) };
+  if (def) m.def = RR.Editor.playDef(def);
+  netEvent(m); startNetRace(m);
+}
+function netTick(race, dt) {   // send my car ~20x a second
+  if (!race || race.mode !== 'net' || race.phase === 'countdown') return;
+  NET.sendT -= dt; if (NET.sendT > 0) return; NET.sendT = 0.05;
+  const c = race.cars.find(k => k.player === 0);
+  netStateOut({ type: 's', t: +race.time.toFixed(3), x: +c.x.toFixed(1), y: +c.y.toFixed(1), a: +c.a.toFixed(3), vx: +c.vx.toFixed(1), vy: +c.vy.toFixed(1), n: c.nitro > 0 ? 1 : 0 });
+}
+// ---- relay (room codes): host listens on the room's topic and makes an offer for each guest that asks to join ----
+const roomTopic = code => RR.RELAY + 'retroracing-' + String(code).toLowerCase().replace(/[^a-z0-9]/g, '');
+function relayPost(code, obj) { return fetch(roomTopic(code), { method: 'POST', body: JSON.stringify(obj) }); }
+function relayListen(code, fn) {
+  const es = new EventSource(roomTopic(code) + '/sse');
+  es.onmessage = e => { try { const o = JSON.parse(e.data); if (o.event === 'message') fn(JSON.parse(o.message)); } catch (x) {} };
+  return es;
+}
+function randomRoom() { const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 6; i++) s += A[(Math.random() * A.length) | 0]; return s; }
+function hostRoom(code, max) {
+  netCloseAll(); NET.role = 'host'; NET.myId = 0; NET.max = max; NET.room = code; NET.roster = { 0: { car: null } }; NET.rosterList = [{ id: 0, car: null }];
+  const pending = {};
+  NET.es = relayListen(code, async m => {
+    if (m.k === 'join' && !pending[m.g]) {
+      if (NET.peers.length + 1 >= NET.max || state.screen === 'race') { relayPost(code, { k: 'full', g: m.g }); return; }
+      const link = pending[m.g] = { open: false, gid: m.g };
+      relayPost(code, { k: 'offer', g: m.g, d: await netHostOffer(link) });
+    } else if (m.k === 'answer' && pending[m.g] && !pending[m.g].answered) {
+      pending[m.g].answered = true; try { await pending[m.g].pc.setRemoteDescription(await netUnpack(m.d)); } catch (e) {}
+    }
+  });
+}
+function joinRoom(code, status) {
+  netCloseAll(); NET.role = 'guest'; NET.room = code;
+  const gid = Math.random().toString(36).slice(2, 8); let answered = false;
+  NET.es = relayListen(code, async m => {
+    if (m.g !== gid) return;
+    if (m.k === 'full') { status('That room is full (or already racing).'); return; }
+    if (m.k === 'offer' && !answered) { answered = true; status('Found the host - connecting...'); relayPost(code, { k: 'answer', g: gid, d: await netGuestAnswer(m.d) }); }
+  });
+  NET.es.onopen = () => { relayPost(code, { k: 'join', g: gid }).catch(() => status('Could not reach the room server - check the internet, or use offline codes.')); };
+  NET.es.onerror = () => { if (!NET.ok) status('Could not reach the room server - check the internet, or use offline codes.'); };
+  setTimeout(() => { if (!NET.ok && NET.role === 'guest' && !answered) status('No host found with code ' + code + ' yet. Check the code (the host must have the room open).'); }, 8000);
+}
+// ---- quick chat ----
+function addChat(id, text) {
+  NET.chat.push({ id, text: String(text).slice(0, 48), t: performance.now() }); if (NET.chat.length > 6) NET.chat.shift();
+  if (id >= 0 && id !== NET.myId) A.play('menu');
+  chatPanelRefresh();
+}
+function sendChat(which) {
+  const text = which === 'custom' ? (save.chatCustom || '').trim() : (save.chatPreset || CHAT_PRESETS[0]);
+  if (!text || !state.net) return;
+  netEvent({ type: 'chat', text }); addChat(NET.myId, text);
+}
+function chatType() {
+  if (document.getElementById('rr-type')) return;
+  clearInput();
+  const d = document.createElement('div'); d.id = 'rr-type';
+  d.style.cssText = 'position:fixed;left:50%;bottom:' + (RR.MOBILE ? '40%' : '14%') + ';transform:translateX(-50%);z-index:45;background:rgba(5,10,40,0.85);border:2px solid #ffcf40;border-radius:10px;padding:6px 8px;display:flex;gap:6px;align-items:center;font:bold 13px "Trebuchet MS",sans-serif;color:#ffcf40';
+  d.innerHTML = 'Say: <input maxlength="60" style="width:' + (RR.MOBILE ? '60vw' : '320px') + ';font:14px sans-serif;border-radius:6px;border:1px solid #9fb3ff;padding:3px 6px"><span style="color:#9fb3ff;font-size:11px">Enter = send, Esc = cancel</span>';
+  document.body.appendChild(d);
+  const inp = d.querySelector('input'); setTimeout(() => inp.focus(), 0);
+  const close = () => { d.remove(); clearInput(); canvas.focus && canvas.focus(); };
+  inp.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') { const t = inp.value.trim(); if (t && state.net) { netEvent({ type: 'chat', text: t }); addChat(NET.myId, t); } close(); } else if (e.key === 'Escape') close(); };
+  inp.onblur = () => setTimeout(() => { if (document.getElementById('rr-type')) close(); }, 100);
+}
+// HTML panel (top-left): recent messages + your two quick chats; Q sends the chosen one, E sends the one you wrote
+function chatPanel(show, small) {
+  let p = document.getElementById('rr-chat');
+  if (!show) { if (p) p.remove(); return; }
+  small = small || '';
+  if (p) { if (p.small !== small) { p.small = small; p.lastChild.style.display = small ? 'none' : ''; p.style.top = small ? 'auto' : '6px'; p.style.bottom = small ? '6px' : 'auto'; p.style.width = small ? '250px' : (RR.MOBILE ? '94vw' : '226px'); p.style.left = small === 'bc' ? 'calc(50% - 125px)' : '6px'; p.style.pointerEvents = small ? 'none' : ''; } return; }
+  p = document.createElement('div'); p.id = 'rr-chat';
+  p.style.cssText = 'position:fixed;left:6px;top:6px;z-index:40;width:' + (RR.MOBILE ? '94vw' : '226px') + ';font:13px "Trebuchet MS","Segoe UI",sans-serif;color:#fff;user-select:text;touch-action:auto';
+  const opts = CHAT_PRESETS.map(t => '<option' + (t === save.chatPreset ? ' selected' : '') + '>' + t + '</option>').join('');
+  p.innerHTML = '<div id="rr-log" style="background:rgba(5,10,40,0.75);border-radius:8px;padding:4px 7px;margin-bottom:4px;min-height:18px"></div>' +
+    '<div style="background:rgba(13,26,74,0.88);border:2px solid #5d7cff;border-radius:9px;padding:5px 6px">' +
+    '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px"><select id="rr-pre" style="flex:1;font:13px sans-serif;border-radius:6px">' + opts + '</select>' +
+    '<button id="rr-s1" style="font:bold 12px sans-serif;border-radius:6px;background:#2742b8;color:#fff;border:1px solid #9fb3ff;padding:3px 7px;white-space:nowrap;min-width:30px" title="Send">' + (RR.MOBILE ? 'Send' : 'Q') + '</button></div>' +
+    '<div style="display:flex;gap:4px;align-items:center"><input id="rr-cus" maxlength="40" placeholder="write your own quick chat" style="flex:1;font:13px sans-serif;border-radius:6px;padding:2px 5px">' +
+    '<button id="rr-s2" style="font:bold 12px sans-serif;border-radius:6px;background:#1f8a2e;color:#fff;border:1px solid #9fb3ff;padding:3px 7px;white-space:nowrap;min-width:30px" title="Send">' + (RR.MOBILE ? 'Send' : 'E') + '</button></div></div>';
+  document.body.appendChild(p); p.small = ''; if (small) { p.small = null; chatPanel(true, small); }
+  const pre = p.querySelector('#rr-pre'), cus = p.querySelector('#rr-cus');
+  if (!save.chatPreset) save.chatPreset = CHAT_PRESETS[1];
+  pre.value = save.chatPreset; cus.value = save.chatCustom || '';
+  pre.onchange = () => { save.chatPreset = pre.value; persist(); pre.blur(); };
+  cus.oninput = () => { save.chatCustom = cus.value; persist(); };
+  cus.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') { sendChat('custom'); cus.blur(); } };
+  p.querySelector('#rr-s1').onclick = () => sendChat('preset'); p.querySelector('#rr-s2').onclick = () => sendChat('custom');
+  chatPanelRefresh();
+}
+function chatPanelRefresh() {
+  const l = document.getElementById('rr-log'); if (!l) return;
+  l.innerHTML = NET.chat.slice(-4).map(c => c.id < 0 ? '<div style="color:#9fb3ff;font-style:italic">' + escHtml(c.text) + '</div>'
+    : '<div><b style="color:' + (c.id === NET.myId ? '#ffcf40' : '#9fe9ff') + '">' + (c.id === NET.myId ? 'You' : 'P' + (c.id + 1)) + ':</b> ' + escHtml(c.text) + '</div>').join('') || '<div style="color:#9fb3ff">' + (RR.MOBILE ? 'Quick chat - tap Send' : 'Chat: T to type, Q / E quick chats') + '</div>';
+}
+function escHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+// ---- pairing screen ----
+function netOverlayClose() { if (NET.overlay) { NET.overlay.remove(); NET.overlay = null; } }
+function netOverlayRefresh() { if (NET.overlay && NET.overlay.refresh) NET.overlay.refresh(); }
+function netOverlay() {
+  netOverlayClose();
+  const d = document.createElement('div'); NET.overlay = d;
+  d.style.cssText = 'user-select:text;-webkit-user-select:text;touch-action:auto;position:fixed;inset:0;z-index:50;background:rgba(5,10,40,0.92);display:flex;align-items:center;justify-content:center;font-family:"Trebuchet MS","Segoe UI",sans-serif;color:#fff';
+  const box = 'background:#0d1a4a;border:3px solid #5d7cff;border-radius:14px;padding:18px 20px;width:min(560px,92vw);max-height:92vh;overflow:auto;box-sizing:border-box';
+  const btn = c => 'background:' + (c || '#2742b8') + ';color:#fff;border:2px solid #9fb3ff;border-radius:9px;padding:9px 14px;font:bold 15px "Trebuchet MS",sans-serif;cursor:pointer;margin:4px 6px 4px 0';
+  const inp = 'font:bold 20px monospace;letter-spacing:3px;text-transform:uppercase;width:190px;padding:6px 8px;border-radius:8px;border:2px solid #5d7cff;background:#050c2a;color:#ffcf40';
+  const ta = 'width:100%;box-sizing:border-box;height:70px;border-radius:8px;border:2px solid #5d7cff;background:#050c2a;color:#cfe;font:12px monospace;padding:6px;word-break:break-all';
+  const set = h => { d.innerHTML = '<div style="' + box + '">' + h + '</div>'; d.refresh = null; };
+  const $ = s => d.querySelector(s);
+  const home = () => {
+    set('<h2 style="margin:0 0 6px">Wi-Fi Race</h2><p style="margin:0 0 12px;color:#bcd0ff;font-size:14px">Race up to 6 players on phones or PCs. One player hosts a room and shares the room code; everyone else joins with it.</p>' +
+      '<button id="nh" style="' + btn() + '">Host a room</button><button id="nj" style="' + btn() + '">Join a room</button><button id="nx" style="' + btn('#7a1010') + '">Back</button>' +
+      '<p style="margin:14px 0 0;font-size:12px;color:#8fa3d8">No internet? <a href="#" id="off" style="color:#9fe9ff">Pair 2 players with offline codes</a></p>');
+    $('#nh').onclick = hostSetup; $('#nj').onclick = joinSetup; $('#nx').onclick = () => { netCloseAll(); netOverlayClose(); };
+    $('#off').onclick = e => { e.preventDefault(); offline(); };
+  };
+  const hostSetup = () => {
+    set('<h2 style="margin:0 0 6px">Host a room</h2><p style="margin:4px 0;color:#bcd0ff">Room code (keep this one or type your own, 4-10 letters/numbers):</p>' +
+      '<input id="rc" maxlength="10" style="' + inp + '" value="' + randomRoom() + '"><p style="margin:12px 0 4px;color:#bcd0ff">Players in the room (you included):</p>' +
+      '<select id="mx" style="font:bold 16px sans-serif;padding:4px 8px;border-radius:7px">' + [2, 3, 4, 5, 6].map(n => '<option' + (n === 6 ? ' selected' : '') + '>' + n + '</option>').join('') + '</select><br>' +
+      '<button id="go" style="' + btn('#1f8a2e') + '">Open room</button><button id="nx" style="' + btn('#7a1010') + '">Back</button><p id="st" style="color:#ffcf40;min-height:18px;margin:6px 0 0"></p>');
+    $('#nx').onclick = home;
+    $('#go').onclick = () => {
+      const code = $('#rc').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (code.length < 4) { $('#st').textContent = 'Use at least 4 letters/numbers.'; return; }
+      hostRoom(code, +$('#mx').value); lobby();
+    };
+  };
+  const lobby = () => {
+    const draw = () => {
+      const ps = netPlayers();
+      set('<h2 style="margin:0 0 6px">Your room</h2>' + (NET.room ? 'Tell everyone this code:' : 'Connected with offline codes:').replace(/^/, '<p style="margin:0;color:#bcd0ff">') + '</p><div style="font:bold 40px monospace;letter-spacing:6px;color:#ffcf40;margin:4px 0 10px">' + (NET.room || 'OFFLINE') + '</div>' +
+        '<p style="margin:0 0 6px">Players: <b>' + ps.length + ' / ' + NET.max + '</b></p><div style="margin:0 0 10px;color:#9fe9ff">' + ps.map(p => 'P' + (p.id + 1) + (p.id === 0 ? ' (you)' : '')).join(' &nbsp; ') + '</div>' +
+        '<button id="go" style="' + btn('#1f8a2e') + '"' + (ps.length < 2 ? ' disabled' : '') + '>Pick cars</button><button id="nx" style="' + btn('#7a1010') + '">Close room</button>' +
+        '<p style="color:#8fa3d8;font-size:12px;margin:8px 0 0">Waiting for players... New players can keep joining until the race starts.</p>');
+      $('#go').onclick = () => { state.net = true; NET.ok = true; state.twoPlayer = false; state.selPlayer = 0; netOverlayClose(); A.play('menu'); go('carselect'); };
+      $('#nx').onclick = () => { netEvent({ type: 'bye' }); setTimeout(netCloseAll, 150); home(); };
+      d.refresh = draw;
+    };
+    draw();
+  };
+  const joinSetup = () => {
+    set('<h2 style="margin:0 0 6px">Join a room</h2><p style="margin:4px 0;color:#bcd0ff">Type the room code:</p><input id="rc" maxlength="10" style="' + inp + '" placeholder="CODE"><br>' +
+      '<button id="go" style="' + btn('#1f8a2e') + '">Join</button><button id="nx" style="' + btn('#7a1010') + '">Back</button><p id="st" style="color:#ffcf40;min-height:18px;margin:6px 0 0"></p>');
+    $('#rc').focus(); $('#nx').onclick = () => { netCloseAll(); home(); };
+    const go = () => { const code = $('#rc').value.toUpperCase().replace(/[^A-Z0-9]/g, ''); if (code.length < 4) { $('#st').textContent = 'Room codes have at least 4 letters/numbers.'; return; }
+      $('#st').textContent = 'Looking for room ' + code + '...'; joinRoom(code, t => { if ($('#st')) $('#st').textContent = t; }); };
+    $('#go').onclick = go; $('#rc').onkeydown = e => { if (e.key === 'Enter') go(); };
+  };
+  const copyBtn = (id, src) => { $(id).onclick = () => { const t = $(src); t.select(); try { navigator.clipboard.writeText(t.value); } catch (e) { document.execCommand('copy'); } $(id).textContent = 'Copied!'; }; };
+  const offline = () => {
+    set('<h2 style="margin:0 0 6px">Offline codes (2 players)</h2><p style="color:#bcd0ff;margin:0 0 10px">Works with no internet on the same Wi-Fi, but the codes are long.</p>' +
+      '<button id="oh" style="' + btn() + '">I\'m hosting</button><button id="oj" style="' + btn() + '">I\'m joining</button><button id="nx" style="' + btn('#7a1010') + '">Back</button>');
+    $('#nx').onclick = home;
+    $('#oh').onclick = async () => {
+      netCloseAll(); NET.role = 'host'; NET.max = 2; NET.roster = { 0: { car: null } }; NET.rosterList = [{ id: 0, car: null }];
+      const link = { open: false }; set('<p>Making your code...</p>');
+      const code = await netHostOffer(link);
+      set('<h2 style="margin:0 0 6px">Offline host</h2><p style="margin:4px 0;color:#bcd0ff">1. Send this code to your friend:</p><textarea id="mc" readonly style="' + ta + '">' + code + '</textarea><button id="cp" style="' + btn() + '">Copy code</button>' +
+        '<p style="margin:10px 0 4px;color:#bcd0ff">2. Paste their reply code:</p><textarea id="rp" style="' + ta + '"></textarea><button id="go" style="' + btn('#1f8a2e') + '">Connect</button><button id="nx" style="' + btn('#7a1010') + '">Cancel</button><p id="st" style="color:#ffcf40;min-height:18px"></p>');
+      copyBtn('#cp', '#mc'); $('#nx').onclick = () => { netCloseAll(); home(); };
+      $('#go').onclick = async () => { try { await link.pc.setRemoteDescription(await netUnpack($('#rp').value)); $('#st').textContent = 'Connecting...'; d.refresh = () => { if (NET.peers.length) lobby(); }; } catch (e) { $('#st').textContent = 'That reply code did not work.'; } };
+    };
+    $('#oj').onclick = () => {
+      netCloseAll(); NET.role = 'guest';
+      set('<h2 style="margin:0 0 6px">Offline join</h2><p style="margin:4px 0;color:#bcd0ff">1. Paste the host\'s code:</p><textarea id="hc" style="' + ta + '"></textarea><button id="mk" style="' + btn('#1f8a2e') + '">Make my reply code</button><button id="nx" style="' + btn('#7a1010') + '">Cancel</button><div id="rpl"></div><p id="st" style="color:#ffcf40;min-height:18px"></p>');
+      $('#nx').onclick = () => { netCloseAll(); home(); };
+      $('#mk').onclick = async () => { try { const code = await netGuestAnswer($('#hc').value); $('#rpl').innerHTML = '<p style="margin:10px 0 4px;color:#bcd0ff">2. Send this reply code back:</p><textarea id="mc" readonly style="' + ta + '">' + code + '</textarea><button id="cp" style="' + btn() + '">Copy reply code</button>'; copyBtn('#cp', '#mc'); $('#st').textContent = 'Waiting for the host...'; } catch (e) { $('#st').textContent = 'That code did not work.'; } };
+    };
+  };
+  home(); document.body.appendChild(d);
+}
+function startGhostRace(ti) {
+  const gh = loadGhost(ti); if (!gh) { notice('No ghost for race ' + (ti + 1) + ' yet.\nFinish the race once to record one.'); return; }
+  state.track = ti; state.paused = false; state.pauseOpts = false; clearInput(); state.twoPlayer = false;
+  state.race = RR.createRace({ trackIndex: ti, players: [{ carId: state.carSel[0] }], mode: 'ghost', ghost: gh });
+  state.cams = [{ car: state.race.cars[0], x: state.race.cars[0].x, y: state.race.cars[0].y }];
+  state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null;
+  A.setMusic('game'); A.setEngines(1);
+}
+function finishModeRace(race) {
+  const me = race.cars.find(c => c.player === 0), other = race.cars.find(c => c.puppet), i = race.trackIndex;
+  const res = { mode: race.mode, myTime: me.finishTime, myCar: me.liv, otherCar: other.liv, otherTime: other.finished ? other.finishTime : (race.mode === 'ghost' ? other.ghostTime : null), standings: [] };
+  if (race.mode === 'net') { netEvent({ type: 'fin', t: me.finishTime }); res.times = {}; res.cars = {}; res.left = {}; race.cars.forEach(c => { res.cars[c.netId] = c.carId; res.times[c.netId] = c.finished ? c.finishTime : (c.netFin != null ? c.netFin : null); if (c.left) res.left[c.netId] = 1; }); }
+  if (race.mode === 'ghost' && me.finished && (!save.best[i] || me.finishTime < save.best[i])) {
+    save.best[i] = me.finishTime; persist(); res.newBest = true;
+    if (race.rec) saveGhost(i, race.rec, me.finishTime, state.carSel[0]);
+  }
+  state.result = res; A.stopEngines(); A.play('finish'); go('results'); state.focus = buttons().length - 1;
+}
 function finishRace() {
   const race = state.race;
+  if (race.mode) return finishModeRace(race);
   // fast-forward remaining opponents so they get real finish times
   race.cars.forEach(c => c.ai = true);
   for (let i = 0; i < 240 / RR.SIM_DT && race.cars.some(c => !c.finished); i++) { race.phase = 'racing'; RR.step(race, RR.SIM_DT, []); }
@@ -1582,13 +2811,16 @@ function finishRace() {
   const st = RR.standings(race);
   const players = st.filter(c => c.player >= 0);
   const res = { standings: st.map(c => ({ name: c.player >= 0 ? (race.twoPlayer ? 'P' + (c.player + 1) : 'YOU') : c.liv.name, liv: c.liv, time: c.finished ? c.finishTime : null, player: c.player })), stars: 0, unlockedNext: false };
-  if (!race.twoPlayer) {
+  if (race.custom) {
+    res.pos = st.indexOf(players[0]) + 1; res.stars = 0; const id = state.custom && state.custom.def.id; save.customBest = save.customBest || {};
+    if (id && players[0].finished && (!save.customBest[id] || players[0].finishTime < save.customBest[id])) { save.customBest[id] = players[0].finishTime; res.newBest = true; persist(); }
+  } else if (!race.twoPlayer) {
     const pos = st.indexOf(players[0]) + 1;
     res.pos = pos; res.stars = pos <= 3 ? 4 - pos : 0;
     const i = race.trackIndex;
     const doneBefore = racesDone();
     if (res.stars > save.stars[i]) save.stars[i] = res.stars;
-    if (players[0].finished && (!save.best[i] || players[0].finishTime < save.best[i])) save.best[i] = players[0].finishTime;
+    if (players[0].finished && (!save.best[i] || players[0].finishTime < save.best[i])) { save.best[i] = players[0].finishTime; if (race.rec) { saveGhost(i, race.rec, players[0].finishTime, state.carSel[0]); res.newGhost = true; } }
     if (pos <= 3 && i + 1 > save.unlocked && i < 17) { save.unlocked = i + 1; res.unlockedNext = true; }
     const newCars = RR.CARS.filter(c => c.unlock && doneBefore < c.unlock && racesDone() >= c.unlock);
     if (newCars.length) res.newCar = newCars.map(c => c.name).join(' & ');
@@ -1602,11 +2834,11 @@ function handleEvents(race) {
     const mine = e.car && e.car.player >= 0;
     if (e.type === 'buzz') A.play('buzz_full');
     else if (e.type === 'finalLap') A.say('Final lap');
-    else if (e.type === 'pickup' && mine) { A.play(e.kind === 'N' ? 'nitro' : 'pickup'); A.say(RR.PICKUPS[e.kind].voice); }
-    else if (e.type === 'wall' && mine) A.play('wall', e.power);
+    else if (e.type === 'pickup' && mine) { A.play(e.kind === 'N' ? 'nitro' : 'pickup'); A.say(RR.PICKUPS[e.kind].voice); if (race.mode === 'net') netEvent({ type: 'pk', i: e.idx }); }
+    else if (e.type === 'wall') { if (mine) A.play('wall', e.power); if (e.power > 60) fxBurst('smoke', e.car.x, e.car.y, Math.min(10, e.power / 25) | 0, 50); }
     else if (e.type === 'car' && (mine || (e.other && e.other.player >= 0))) A.play('car', e.power);
     else if (e.type === 'cone' && mine) A.play('cone');
-    else if (e.type === 'finish' && mine) A.play('finish');
+    else if (e.type === 'finish' && mine) { A.play('finish'); if (race.mode === 'net') netEvent({ type: 'fin', t: e.car.finishTime }); }
   }
 }
 
@@ -1618,6 +2850,217 @@ const HUDC = 'rgba(232,232,232,0.78)';
 function ordinal(n) { return n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH'; }
 function fmtTime(t) { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); }
 
+// ================= HD effects: smoke & dust, tyre marks, swaying grass, car lighting, screen finish =================
+const FX = { parts: [], last: 0, wind: 0 }; RR.FX = FX;
+const fxHD = () => save.gfx !== 'fast';
+function softSprite(rgb) {
+  const c = RR.mk(64, 64), x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, `rgba(${rgb},1)`); g.addColorStop(0.45, `rgba(${rgb},0.55)`); g.addColorStop(1, `rgba(${rgb},0)`);
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64); return c;
+}
+const PUFF = { snow: softSprite('250,252,255'), smoke: softSprite('236,236,232'), dust: softSprite('196,168,120'), grass: softSprite('178,166,118'), dark: softSprite('60,58,56'), fire: softSprite('255,170,60') };
+const softShadowSpr = RR.makeSoftShadow();
+const TUFT_COL = ['#2f6e20', '#3b7f27', '#2a6420'], TUFT_TIP = ['#7fc65a', '#9ad46c', '#6db84c'], TALL_COL = ['#2e6a20', '#3d7a28', '#4a7f2a'], TALL_TIP = ['#8cc05a', '#a9cf6c', '#c4d77a'];
+function fxSpawn(kind, x, y, vx, vy, size, life) {
+  const P = FX.parts; if (P.length > (fxHD() ? (RR.MOBILE ? 180 : 360) : 90)) P.shift();
+  P.push({ kind, x, y, vx, vy, s: size, g: size * (kind === 'fire' ? -0.6 : 1.4), life, t: 0, rot: Math.random() * 6.28 });
+}
+function markCol(T, a) { const m = (T.theme || RR.THEMES.grass).mark; return `rgba(${m[0]},${m[1]},${m[2]},${m[3] * a})`; }
+function carLook(c) {   // speed, sideways speed, rear wheel positions (works for puppets too)
+  const sp = Math.hypot(c.vx, c.vy), fx = Math.sin(c.a), fy = -Math.cos(c.a), rx = Math.cos(c.a), ry = Math.sin(c.a);
+  const lat = Math.abs(c.vx * rx + c.vy * ry);
+  return { sp, lat, fx, fy, rx, ry, w: [[c.x + rx * 7 - fx * 9, c.y + ry * 7 - fy * 9], [c.x - rx * 7 - fx * 9, c.y - ry * 7 - fy * 9]] };
+}
+function fxUpdate(race, dt) {
+  const T = race.T, hd = fxHD();
+  FX.wind += dt; FX.dt = dt;
+  for (const c of race.cars) {
+    if (c.puppet === 'ghost') { c.fxW = null; continue; }
+    const L = carLook(c), surf = RR.surfAt(T, c.x, c.y), road = surf === 1;
+    // --- tyre marks: sliding on tarmac, or any driving over grass / dirt / sand ---
+    const markA = road ? Math.min(1, Math.max(0, (L.lat - 38) / 70)) * (L.sp > 30 ? 1 : 0) : (L.sp > 25 ? 0.85 : 0);
+    if (markA > 0.02 && c.fxW && !race.video) {
+      const col = road ? `rgba(22,22,24,${0.22 * markA})` : surf === 0 ? markCol(T, markA) : `rgba(92,66,34,${0.34 * markA})`, W0 = c.fxW, W1 = L.w;
+      const xs = [W0[0][0], W0[1][0], W1[0][0], W1[1][0]], ys = [W0[0][1], W0[1][1], W1[0][1], W1[1][1]];
+      RR.paintTrack(T, Math.min(...xs) - 4, Math.min(...ys) - 4, Math.max(...xs) + 4, Math.max(...ys) + 4, v => {
+        const tread = !road && T.theme && T.theme.tread; v.lineCap = tread ? 'butt' : 'round'; v.lineWidth = road ? 3.2 : tread ? 4 : 3.6; v.strokeStyle = col; if (tread) v.setLineDash([1.6, 1.1]);
+        v.beginPath(); for (let k = 0; k < 2; k++) { v.moveTo(W0[k][0], W0[k][1]); v.lineTo(W1[k][0], W1[k][1]); } v.stroke(); if (tread) v.setLineDash([]);
+      });
+    }
+    c.fxW = L.w;
+    // --- smoke and dust ---
+    if (!hd && Math.random() < 0.5) continue;
+    const rate = road ? Math.min(1.6, Math.max(0, (L.lat - 45) / 55)) * 40 + (c.throttle && L.sp < 70 && race.time < 3 && race.time > 0 ? 14 : 0)
+                      : (L.sp > 40 ? (surf === 0 ? 18 : 34) * Math.min(1, L.sp / 150) : 0);
+    let n = rate * dt; while (n > 0) {
+      if (Math.random() < n) { const w = L.w[(Math.random() * 2) | 0];
+        fxSpawn(road ? 'smoke' : surf === 0 ? ((T.theme && T.theme.puff) || 'grass') : (T.theme && T.theme.puff === 'snow' && surf === 2 ? 'snow' : 'dust'), w[0] + (Math.random() - 0.5) * 4, w[1] + (Math.random() - 0.5) * 4, c.vx * 0.15 + (Math.random() - 0.5) * 18, c.vy * 0.15 + (Math.random() - 0.5) * 18, road ? 7 : 6, road ? 1.3 : 0.9); }
+      n -= 1;
+    }
+    if (c.nitro > 0 && Math.random() < dt * 40) { fxSpawn('fire', c.x - L.fx * 15, c.y - L.fy * 15, -L.fx * 60 + c.vx * 0.6, -L.fy * 60 + c.vy * 0.6, 4, 0.25); if (Math.random() < 0.5) fxSpawn('dark', c.x - L.fx * 16, c.y - L.fy * 16, c.vx * 0.3, c.vy * 0.3, 4, 0.7); }
+  }
+  for (const p of FX.parts) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; const d = Math.exp(-2.2 * dt); p.vx *= d; p.vy *= d; p.s += p.g * dt; }
+  FX.parts = FX.parts.filter(p => p.t < p.life && p.s > 0.5);
+}
+function fxBurst(kind, x, y, n, sp) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = sp * (0.4 + Math.random()); fxSpawn(kind, x, y, Math.cos(a) * s, Math.sin(a) * s, 5, 0.6 + Math.random() * 0.4); } }
+function fxDrawParts(minAlpha) {
+  for (const p of FX.parts) {
+    const k = p.t / p.life, a = (p.kind === 'fire' ? 0.9 : p.kind === 'smoke' ? 0.55 : p.kind === 'snow' ? 0.8 : 0.6) * (1 - k) * Math.min(1, p.t * 12);
+    if (a < (minAlpha || 0.01)) continue;
+    ctx.globalAlpha = a; if (p.kind === 'fire') ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(PUFF[p.kind], p.x - p.s, p.y - p.s, p.s * 2, p.s * 2);
+    if (p.kind === 'fire') ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.globalAlpha = 1;
+}
+// grass: each tuft's tip is a damped spring pushed by the wind and by cars driving past
+function fxGrass(race, x0, y0, x1, y1, dt) {
+  const TG = race.T.tuftGrid; if (!TG) return;
+  const hd = fxHD(), cars = race.cars.filter(c => c.puppet !== 'ghost' && c.x > x0 - 60 && c.x < x1 + 60 && c.y > y0 - 60 && c.y < y1 + 60);
+  const spr = race.T.tuftSpr || (race.T.tuftSpr = RR.makeTuftSprites(race.T.tuftPal || { base: TUFT_COL, tip: TUFT_TIP }, 5));
+  const sprT = race.T.tuftSprTall || (race.T.tuftSprTall = RR.makeTuftSprites(race.T.tuftPalTall || { base: TALL_COL, tip: TALL_TIP }, 9));
+  const gx0 = Math.max(0, (x0 / TG.G) | 0), gx1 = Math.min(TG.gw - 1, (x1 / TG.G) | 0), gy0 = Math.max(0, (y0 / TG.G) | 0), gy1 = Math.min(TG.gh - 1, (y1 / TG.G) | 0);
+  const t = FX.wind, frame = state.t, M = ctx.getTransform();
+  ctx.imageSmoothingEnabled = true;
+  for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+    const cell = TG.cells[gy * TG.gw + gx]; if (!cell) continue;
+    for (let q = 0; q < cell.length; q++) {
+      const u = cell[q];
+      if (!hd && (q & 1)) continue;
+      if (u.f !== frame && dt > 0) {
+        u.f = frame;
+        const gust = 1.4 + Math.sin(t * 0.7 + u.x * 0.004) * 1.2, wx = gust * (0.8 + 0.5 * Math.sin(t * 2.3 + u.x * 0.05 + u.y * 0.03)), wy = gust * 0.35 * Math.sin(t * 1.7 + u.y * 0.04);
+        let fx = (wx - u.bx) * 30, fy = (wy - u.by) * 30;
+        for (const c of cars) {
+          const dx = u.x - c.x, dy = u.y - c.y, d2 = dx * dx + dy * dy; if (d2 > 2300) continue;
+          const d = Math.sqrt(d2) + 0.01, sp = Math.hypot(c.vx, c.vy), fall = 1 - d / 48;
+          const push = fall * fall * (90 + sp * 2.2);
+          fx += dx / d * push + c.vx * fall * 1.6; fy += dy / d * push + c.vy * fall * 1.6;
+        }
+        u.vx += fx * dt; u.vy += fy * dt; const damp = Math.exp(-5 * dt); u.vx *= damp; u.vy *= damp;
+        u.bx += u.vx * dt; u.by += u.vy * dt;
+        const m = Math.hypot(u.bx, u.by), lim = u.tall ? 9 : 6; if (m > lim) { u.bx *= lim / m; u.by *= lim / m; }
+      }
+      const img = (u.tall ? sprT.tall : spr.short)[u.v], h = img.h;
+      // skew so the top of the tuft moves by (bx, by) while the base stays put
+      ctx.setTransform(M.a, 0, -M.a * u.bx / h, M.d * (1 - u.by / h * 0.6), M.a * u.x + M.e, M.d * u.y + M.f);
+      ctx.drawImage(img, -img.w / 2, -h, img.w, h);
+    }
+  }
+  ctx.setTransform(M); ctx.imageSmoothingEnabled = false;
+}
+// ---------- weather that moves: falling snow, drifting leaves, blowing sand ----------
+const WX = { list: [], kind: null };
+const flakeSpr = softSprite('255,255,255');
+const LEAF_COL = ['#e0802c', '#f0b040', '#c0461e', '#d8a030'];
+function fxWeather(race, cx, cy, ww, wh, dt) {
+  const kind = race.T.theme && race.T.theme.weather; if (!kind) return;
+  const want = (kind === 'snow' ? 140 : kind === 'leaves' ? 26 : 34) * (fxHD() ? 1 : 0.5);
+  if (WX.kind !== kind) { WX.kind = kind; WX.list = []; }
+  const L = WX.list;
+  while (L.length < want) L.push({ x: cx + Math.random() * ww, y: cy + Math.random() * wh, z: 0.4 + Math.random() * 0.8, r: Math.random() * 6.28, s: Math.random(), c: (Math.random() * 4) | 0 });
+  const t = FX.wind, gust = 1 + 0.6 * Math.sin(t * 0.5);
+  for (const p of L) {
+    if (dt > 0) {
+      if (kind === 'snow') { p.x += (18 * gust + Math.sin(t * 1.3 + p.s * 9) * 10) * p.z * dt; p.y += 26 * p.z * dt; }
+      else if (kind === 'leaves') { p.x += (34 * gust + Math.sin(t * 2 + p.s * 7) * 22) * dt; p.y += (14 + Math.cos(t * 1.7 + p.s * 5) * 16) * dt; p.r += (1.5 + p.s * 2) * dt; }
+      else { p.x += (150 + p.s * 120) * gust * dt; p.y += Math.sin(t + p.s * 5) * 6 * dt; }
+    }
+    // wrap around the view so the screen always stays full
+    if (p.x < cx - 20) p.x += ww + 40; else if (p.x > cx + ww + 20) p.x -= ww + 40;
+    if (p.y < cy - 20) p.y += wh + 40; else if (p.y > cy + wh + 20) p.y -= wh + 40;
+  }
+  ctx.imageSmoothingEnabled = true;
+  if (kind === 'snow') { for (const p of L) { const s = 1.2 + p.z * 1.6; ctx.globalAlpha = 0.55 + p.z * 0.35; ctx.drawImage(flakeSpr, p.x - s, p.y - s, s * 2, s * 2); } }
+  else if (kind === 'leaves') { for (const p of L) { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.scale(1, 0.5 + 0.5 * Math.abs(Math.sin(p.r * 1.3))); ctx.fillStyle = LEAF_COL[p.c]; ctx.beginPath(); ctx.ellipse(0, 0, 2.6, 1.4, 0, 0, 7); ctx.fill(); ctx.restore(); } }
+  else { ctx.lineCap = 'round'; for (const p of L) { ctx.globalAlpha = 0.18 + p.s * 0.2; ctx.strokeStyle = '#f4dca8'; ctx.lineWidth = 0.8 + p.z; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - 14 - p.s * 16, p.y - 1); ctx.stroke(); } }
+  ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false;
+}
+// ---------- night: light map (dark ambient + lamps + headlights), multiplied over the view; then glows ----------
+const lightC = RR.mk(8, 8), lightX = lightC.getContext('2d');
+const lampSpr = (() => { const c = RR.mk(128, 128), x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,236,190,1)'); g.addColorStop(0.35, 'rgba(255,210,150,0.55)'); g.addColorStop(1, 'rgba(255,200,140,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return c; })();
+const beamSpr = (() => {   // headlight beam pointing up (car nose direction), origin at bottom centre
+  const c = RR.mk(128, 192), x = c.getContext('2d'), g = x.createLinearGradient(0, 192, 0, 0);
+  g.addColorStop(0, 'rgba(255,250,225,0.95)'); g.addColorStop(0.5, 'rgba(255,245,210,0.45)'); g.addColorStop(1, 'rgba(255,240,200,0)');
+  x.fillStyle = g; x.beginPath(); x.moveTo(52, 192); x.lineTo(76, 192); x.lineTo(128, 0); x.lineTo(0, 0); x.closePath();
+  x.filter = 'blur(6px)'; x.fill(); return c;
+})();
+const glowSpr = softSprite('255,240,200'), redSpr = softSprite('255,40,30');
+function fxNight(race, cx, cy, ww, wh) {
+  const T = race.T, time = T.time; if (time !== 'night') return;
+  const q = fxHD() ? 0.4 : 0.3, lw = Math.max(8, Math.ceil(ww * q)), lh = Math.max(8, Math.ceil(wh * q));
+  if (lightC.width !== lw || lightC.height !== lh) { lightC.width = lw; lightC.height = lh; }
+  const x = lightX; x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over';
+  x.fillStyle = T.theme && T.theme.weather === 'snow' ? 'rgba(10,16,44,0.62)' : 'rgba(6,10,34,0.70)'; x.fillRect(0, 0, lw, lh);
+  x.setTransform(q, 0, 0, q, -cx * q, -cy * q); x.globalCompositeOperation = 'destination-out';   // lights cut holes in the darkness
+  for (const l of T.lamps) if (l.x > cx - 120 && l.x < cx + ww + 120 && l.y > cy - 120 && l.y < cy + wh + 120) x.drawImage(lampSpr, l.x - 95, l.y - 95, 190, 190);
+  for (const c of race.cars) {
+    if (c.puppet === 'ghost' || c.x < cx - 200 || c.x > cx + ww + 200 || c.y < cy - 200 || c.y > cy + wh + 200) continue;
+    x.save(); x.translate(c.x, c.y); x.rotate(c.a); x.drawImage(beamSpr, -45, -150, 90, 140); x.drawImage(lampSpr, -22, -22, 44, 44); x.restore();
+  }
+  // nitro and pickups light their surroundings a little
+  for (const p of race.pickups) if (p.active) x.drawImage(lampSpr, p.x - 18, p.y - 18, 36, 36);
+  ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(lightC, cx, cy, lw / q, lh / q); ctx.restore();
+  // glows on top: lamp bulbs, headlamps, tail lights
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.imageSmoothingEnabled = true;
+  for (const l of T.lamps) if (l.x > cx - 100 && l.x < cx + ww + 100 && l.y > cy - 100 && l.y < cy + wh + 100) { ctx.globalAlpha = 0.9; ctx.drawImage(glowSpr, l.x - 9, l.y - 9, 18, 18); }
+  for (const c of race.cars) {
+    if (c.puppet === 'ghost' || c.x < cx - 30 || c.x > cx + ww + 30 || c.y < cy - 30 || c.y > cy + wh + 30) continue;
+    ctx.translate(c.x, c.y); ctx.rotate(c.a);
+    ctx.globalAlpha = 0.85; ctx.drawImage(glowSpr, -9, -18, 7, 7); ctx.drawImage(glowSpr, 2, -18, 7, 7);
+    const brake = !c.throttle; ctx.globalAlpha = brake ? 0.95 : 0.6; ctx.drawImage(redSpr, -9, 10, brake ? 8 : 6, brake ? 8 : 6); ctx.drawImage(redSpr, 1, 10, brake ? 8 : 6, brake ? 8 : 6);
+    ctx.rotate(-c.a); ctx.translate(-c.x, -c.y);
+  }
+  ctx.restore();
+}
+// car with light from the top-left: lit side brighter, far side shaded, gloss streak (pixel sprite stays crisp)
+const carLit = RR.mk(RR.CAR_W * 4, RR.CAR_H * 4), carLitX = carLit.getContext('2d');
+function drawCarLit(c) {
+  ctx.imageSmoothingEnabled = true;
+  if (!fxHD()) { ctx.drawImage(c.sprite, -10, -13, 20, 26); ctx.imageSmoothingEnabled = false; return; }
+  const x = carLitX; x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over'; x.clearRect(0, 0, carLit.width, carLit.height); x.drawImage(c.sprite, 0, 0); x.setTransform(4, 0, 0, 4, 0, 0);
+  const la = -c.a - 2.36, lx = Math.cos(la), ly = Math.sin(la);   // light direction in the car's own frame
+  const g = x.createLinearGradient(10 + lx * 13, 13 + ly * 13, 10 - lx * 13, 13 - ly * 13);
+  g.addColorStop(0, 'rgba(255,255,240,0.38)'); g.addColorStop(0.45, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,20,0.32)');
+  x.globalCompositeOperation = 'source-atop'; x.fillStyle = g; x.fillRect(0, 0, RR.CAR_W, RR.CAR_H);
+  ctx.drawImage(carLit, -10, -13, 20, 26); ctx.imageSmoothingEnabled = false;
+}
+// HD-2D screen finish: tilt-shift blur at the top/bottom (made from the track tiles, no read-back of the screen),
+// plus one cached image holding the warm grade, sun glow and vignette
+const fxBuf = RR.mk(8, 8), fxBufX = fxBuf.getContext('2d'), fxGrade = { c: null, w: 0, h: 0, hd: null };
+function fxPost(race, cx, cy, ww, wh, vx, vy, vw, vh) {
+  ctx.save(); ctx.setTransform(S, 0, 0, S, vx * S, vy * S);
+  const hd = fxHD();
+  if (hd) {
+    const bw = Math.max(8, Math.round(ww / 5)), bh = Math.max(8, Math.round(wh / 5));
+    if (fxBuf.width !== bw || fxBuf.height !== bh) { fxBuf.width = bw; fxBuf.height = bh; }
+    fxBufX.globalCompositeOperation = 'source-over'; fxBufX.setTransform(bw / ww, 0, 0, bh / wh, -cx * bw / ww, -cy * bh / wh);
+    fxBufX.imageSmoothingEnabled = true; RR.drawTrackTiles(fxBufX, race.T, cx, cy, cx + ww, cy + wh);
+    fxBufX.setTransform(1, 0, 0, 1, 0, 0); fxBufX.globalCompositeOperation = 'destination-in';
+    const g = fxBufX.createLinearGradient(0, 0, 0, bh), e = RR.MOBILE ? 0.18 : 0.22;
+    g.addColorStop(0, 'rgba(0,0,0,0.8)'); g.addColorStop(e, 'rgba(0,0,0,0)'); g.addColorStop(1 - e, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)');
+    fxBufX.fillStyle = g; fxBufX.fillRect(0, 0, bw, bh);
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(fxBuf, 0, 0, vw, vh);
+  }
+  const time = race.T.time || 'day';
+  if (!fxGrade.c || fxGrade.w !== vw || fxGrade.h !== vh || fxGrade.hd !== hd || fxGrade.time !== time) {
+    const c = fxGrade.c = RR.mk(Math.max(2, Math.round(vw * 2)), Math.max(2, Math.round(vh * 2))), x = c.getContext('2d'); x.scale(2, 2);
+    fxGrade.w = vw; fxGrade.h = vh; fxGrade.hd = hd; fxGrade.time = time;
+    if (time === 'sunset') {
+      const g = x.createLinearGradient(0, 0, vw, vh); g.addColorStop(0, 'rgba(255,150,70,0.20)'); g.addColorStop(1, 'rgba(120,40,110,0.20)'); x.fillStyle = g; x.fillRect(0, 0, vw, vh);
+      const sun = x.createRadialGradient(0, 0, 0, 0, 0, Math.max(vw, vh)); sun.addColorStop(0, 'rgba(255,190,110,0.22)'); sun.addColorStop(1, 'rgba(255,190,110,0)'); x.fillStyle = sun; x.fillRect(0, 0, vw, vh);
+    } else if (time === 'night') { x.fillStyle = 'rgba(20,30,80,0.06)'; x.fillRect(0, 0, vw, vh); }
+    else if (hd) {
+      x.fillStyle = 'rgba(255,190,120,0.07)'; x.fillRect(0, 0, vw, vh);
+      const sun = x.createRadialGradient(0, 0, 0, 0, 0, Math.max(vw, vh) * 0.8); sun.addColorStop(0, 'rgba(255,236,190,0.10)'); sun.addColorStop(1, 'rgba(255,236,190,0)');
+      x.fillStyle = sun; x.fillRect(0, 0, vw, vh);
+    }
+    const vg = x.createRadialGradient(vw / 2, vh / 2, Math.min(vw, vh) * 0.42, vw / 2, vh / 2, Math.hypot(vw, vh) * 0.62);
+    vg.addColorStop(0, 'rgba(10,8,20,0)'); vg.addColorStop(1, 'rgba(10,8,20,0.38)'); x.fillStyle = vg; x.fillRect(0, 0, vw, vh);
+  }
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(fxGrade.c, 0, 0, vw, vh);
+  ctx.restore();
+}
 function drawView(race, cam, vx, vy, vw, vh) {
   const T = race.T, car = cam.car;
   // camera: centred with velocity look-ahead [observed: player car offset toward travel direction]
@@ -1629,9 +3072,11 @@ function drawView(race, cam, vx, vy, vw, vh) {
   let cx = cam.x - ww / 2, cy = cam.y - wh / 2;
   cx = Math.max(0, Math.min(T.width - ww, cx)); cy = Math.max(0, Math.min(T.height - wh, cy));
   cx = Math.round(cx * k) / k; cy = Math.round(cy * k) / k;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(T.vis, cx, cy, ww, wh, 0, 0, ww, wh);
   ctx.translate(-cx, -cy);
+  ctx.imageSmoothingEnabled = T.hd > 1; ctx.imageSmoothingQuality = 'high';
+  RR.drawTrackTiles(ctx, T, cx, cy, cx + ww, cy + wh);
+  ctx.imageSmoothingEnabled = false;
+  fxGrass(race, cx - 12, cy - 12, cx + ww + 12, cy + wh + 12, state.paused && race.mode !== 'net' ? 0 : 1);
   const inView = (x, y, m) => x > cx - m && x < cx + ww + m && y > cy - m && y < cy + wh + m;
   for (const p of race.pickups) {
     if (!p.active || !inView(p.x, p.y, 20)) continue;
@@ -1644,19 +3089,31 @@ function drawView(race, cam, vx, vy, vw, vh) {
   if (race.video) drawVideoOverlay(race);
   for (const c of race.cars) {
     if (!inView(c.x, c.y, 30)) continue;
-    ctx.save(); ctx.translate(c.x + 2, c.y + 3); ctx.rotate(c.a); ctx.drawImage(shadowSpr, -10, -13); ctx.restore();
+    if (c.puppet === 'ghost') continue;
+    ctx.save(); ctx.translate(c.x + 3, c.y + 4); ctx.rotate(c.a); ctx.imageSmoothingEnabled = true; ctx.drawImage(softShadowSpr, -18, -21, 36, 42); ctx.imageSmoothingEnabled = false; ctx.restore();
   }
+  ctx.imageSmoothingEnabled = true; fxDrawParts(); ctx.imageSmoothingEnabled = false;
   for (const c of race.cars) {
     if (!inView(c.x, c.y, 30)) continue;
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.a); ctx.drawImage(c.sprite, -10, -13);
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.a); if (c.puppet === 'ghost') { ctx.globalAlpha = 0.42; ctx.imageSmoothingEnabled = true; ctx.drawImage(c.sprite, -10, -13, 20, 26); ctx.imageSmoothingEnabled = false; } else drawCarLit(c); ctx.globalAlpha = 1;
     if (c.nitro > 0) { ctx.fillStyle = (race.time * 20 | 0) % 2 ? '#ffd040' : '#ff7020'; ctx.fillRect(-3, 13, 6, 3 + (race.time * 30 % 3)); }
     ctx.restore();
   }
-  for (const d of T.decor) if (inView(d.x, d.y, 50)) ctx.drawImage(d.img, Math.round(d.x - d.img.width / 2), Math.round(d.y - d.img.height / 2));
+  ctx.imageSmoothingEnabled = true;
+  for (const d of T.decor) {
+    if (!inView(d.x, d.y, 50)) continue;
+    if (!d.img.ws) { ctx.drawImage(d.img, Math.round(d.x - d.img.width / 2), Math.round(d.y - d.img.height / 2)); continue; }
+    const sw = fxHD() && !d.umb ? Math.sin(FX.wind * 1.1 + d.ph) * 0.025 + Math.sin(FX.wind * 2.7 + d.ph * 2) * 0.01 : 0;   // trees sway a little in the wind
+    ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(sw); ctx.drawImage(d.img, -d.img.ws / 2, -d.img.ws / 2, d.img.ws, d.img.ws); ctx.restore();
+  }
+  ctx.imageSmoothingEnabled = false;
+  fxNight(race, cx, cy, ww, wh);
+  fxWeather(race, cx, cy, ww, wh, state.paused && race.mode !== 'net' ? 0 : FX.dt || 0);
+  ctx.restore(); fxPost(race, cx, cy, ww, wh, vx, vy, vw, vh); ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip(); ctx.setTransform(k, 0, 0, k, vx * S, vy * S); ctx.translate(-cx, -cy);
   // POS label above player car [observed "POS 5 / 8"]
   for (const c of race.cars) {
     if (race.video || c !== cam.car || !inView(c.x, c.y, 30)) continue;
-    const pos = RR.positionOf(race, c), txt = 'POS ' + pos + ' / ' + RR.NUM_CARS, w = RR.textWidth(txt, 1);
+    const pos = RR.positionOf(race, c), txt = 'POS ' + pos + ' / ' + race.cars.length, w = RR.textWidth(txt, 1);
     const lx = Math.round(c.x - w / 2), ly = Math.round(c.y - 30);
     ctx.fillStyle = 'rgba(60,60,60,0.55)'; roundRect(ctx, lx - 4, ly - 3, w + 8, 13, 3); ctx.fill();
     RR.pixText(ctx, txt, lx, ly, 1, 'rgba(225,225,225,0.9)');
@@ -1689,7 +3146,7 @@ function drawVideoOverlay(race) {
   ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(80,230,255,0.55)'; ctx.setLineDash([5, 4]);
   ctx.beginPath(); for (let i = 0; i < V.x.length; i += 2) ctx.lineTo(V.x[i], V.y[i]); ctx.stroke(); ctx.setLineDash([]);
   if (state.videoMode === 'replay') {
-    ctx.translate(V.x[f], V.y[f]); ctx.rotate(V.h[f]); ctx.globalAlpha = 0.45; ctx.drawImage(race.cars[0].sprite, -10, -13);
+    ctx.translate(V.x[f], V.y[f]); ctx.rotate(V.h[f]); ctx.globalAlpha = 0.45; ctx.drawImage(race.cars[0].sprite, -10, -13, 20, 26);
     ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(80,230,255,0.9)'; ctx.lineWidth = 1.5; ctx.strokeRect(-12, -15, 24, 30);
   }
   ctx.restore();
@@ -1751,7 +3208,7 @@ function drawHUD(race, car, vx, vy, vw, vh) {
     const sc = small ? 8 : 12, w = RR.textWidth(txt, sc), x = Math.round(vw / 2 - w / 2), y = Math.round(vh * 0.2);
     ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fillRect(x - sc, y - sc, w + sc * 2, 7 * sc + sc * 2);
     RR.pixText(ctx, txt, x, y, sc, 'rgba(255,255,255,0.35)');
-    const rt = state.race.twoPlayer ? 'RACE ' + (race.trackIndex + 1) : 'RACE ' + (race.trackIndex + 1), rw = RR.textWidth(rt, small ? 3 : 5);
+    const rt = race.custom ? (race.T.def.name || 'MY TRACK').toUpperCase().replace(/[^A-Z0-9 :.\/!+-]/g, ' ').slice(0, 16) : 'RACE ' + (race.trackIndex + 1), rw = RR.textWidth(rt, small ? 3 : 5);
     RR.pixText(ctx, rt, Math.round(vw / 2 - rw / 2), Math.round(vh * 0.74), small ? 3 : 5, 'rgba(235,235,235,0.45)');
   }
   if (car.finished) {
@@ -1842,7 +3299,7 @@ function drawButton(b, focused) {
     ctx.imageSmoothingEnabled = false;
     const taken = state.twoPlayer && state.selPlayer === 1 && b.team === state.carSel[0];
     const lockd = carLocked(b.team);
-    ctx.globalAlpha = taken ? 0.35 : lockd ? 0.4 : 1; ctx.drawImage(carSprites[b.team], b.x + b.w / 2 - 12, b.y + 4, 24, 31); ctx.globalAlpha = 1;
+    ctx.globalAlpha = taken ? 0.35 : lockd ? 0.4 : 1; ctx.imageSmoothingEnabled = true; ctx.drawImage(carSprites[b.team], b.x + b.w / 2 - 12, b.y + 4, 24, 31); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 1;
     if (lockd) drawPadlock(b.x + b.w / 2, b.y + b.h / 2 + 1);
     const tags = []; if (state.carSel[0] === b.team) tags.push('1UP'); if (state.twoPlayer && (state.selPlayer === 1 || state.carSel[1] !== state.carSel[0]) && state.carSel[1] === b.team && state.selPlayer === 1) tags.push('2UP');
     if (tags.length) { ctx.fillStyle = 'rgba(0,0,0,0.45)'; roundRect(ctx, b.x + 4, b.y + b.h + 3, b.w - 8, 11, 3); ctx.fill();
@@ -1877,6 +3334,11 @@ function drawTrackTile(b) {
   ctx.font = 'bold 16px "Trebuchet MS","Segoe UI",Verdana,sans-serif'; ctx.fillText(b.locked ? '🔒' : b.label, b.x + b.w / 2, b.y + 18);
   if (!state.twoPlayer) for (let k = 0; k < 3; k++) star(b.x + b.w / 2 - 14 + k * 14, b.y + 38, 5.5, save.stars[i] > k);
   else { ctx.font = '8px sans-serif'; ctx.fillText('RACE ' + (i + 1), b.x + b.w / 2, b.y + 38); }
+  if (b.ghost) {   // little ghost: this race has a saved best run to race
+    const gx = b.x + b.w - 11, gy = b.y + 11; ctx.save(); ctx.globalAlpha = state.ghostMode ? 1 : 0.75; ctx.fillStyle = '#e8f6ff';
+    ctx.beginPath(); ctx.arc(gx, gy - 1, 5, Math.PI, 0); ctx.lineTo(gx + 5, gy + 5); ctx.lineTo(gx + 2.5, gy + 3); ctx.lineTo(gx, gy + 5); ctx.lineTo(gx - 2.5, gy + 3); ctx.lineTo(gx - 5, gy + 5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#123'; ctx.fillRect(gx - 2.5, gy - 2, 1.5, 2); ctx.fillRect(gx + 1, gy - 2, 1.5, 2); ctx.restore();
+  }
 }
 function hintText(s, y) {
   ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(255,220,200,0.85)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1912,7 +3374,7 @@ function drawCarSelect() {
   const id = state.carSel[state.selPlayer], cd = RR.CARS[id];
   ctx.imageSmoothingEnabled = false;
   const cx0 = RR.MOBILE ? 95 : 98, cy0 = RR.MOBILE ? 50 : 46;
-  ctx.drawImage(shadowSpr, cx0 + 6, cy0 + 6, 80, 104); ctx.drawImage(carSprites[id], cx0, cy0, 80, 104);
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(softShadowSpr, cx0 - 26, cy0 - 22, 144, 168); ctx.drawImage(carSprites[id], cx0, cy0, 80, 104); ctx.imageSmoothingEnabled = false;
   const nx = RR.MOBILE ? 50 : 236, ny = RR.MOBILE ? 168 : 70, sx = RR.MOBILE ? 222 : 384, sy = RR.MOBILE ? 192 : 96;
   ctx.textAlign = RR.MOBILE ? 'center' : 'left'; ctx.font = 'bold 19px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillText(cd.name, RR.MOBILE ? VW / 2 : nx, ny);
   const rows = [['Top Speed', 'top'], ['Accelerate', 'acc'], ['Tires', 'grip']];
@@ -1929,14 +3391,52 @@ function drawCarSelect() {
   drawButtons();
 }
 
+function drawNetResults(r) {
+  ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = '#0d1a4a'; ctx.fillRect(0, 0, VW, VH);
+  const ids = Object.keys(r.cars).map(Number);
+  const rows = ids.map(id => ({ id, t: r.times[id] })).sort((a, b) => (a.t == null) - (b.t == null) || (a.t || 0) - (b.t || 0));
+  const myPos = rows.findIndex(o => o.id === NET.myId) + 1, allIn = rows.every(o => o.t != null || r.left[o.id]);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = myPos === 1 && allIn ? '#ffcf40' : '#fff'; ctx.font = 'bold 20px "Trebuchet MS","Segoe UI",sans-serif';
+  ctx.fillText(allIn ? (myPos === 1 ? 'YOU WIN!' : 'You finished ' + myPos + ordinal(myPos).toLowerCase()) : 'FINISHED! Waiting for the others...', VW / 2, RR.MOBILE ? 90 : 30);
+  const LX = RR.MOBILE ? 24 : 110, RX = RR.MOBILE ? 246 : 370, TY = RR.MOBILE ? 140 : 62;
+  rows.forEach((o, k) => {
+    const y = TY + k * (RR.MOBILE ? 30 : 24), me = o.id === NET.myId;
+    ctx.font = 'bold 13px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillStyle = me ? '#ffcf40' : '#9fe9ff';
+    ctx.textAlign = 'left'; ctx.fillText((k + 1) + '.  P' + (o.id + 1) + (me ? ' (you)' : '') + '  ' + RR.CARS[r.cars[o.id]].name.replace('Team ', ''), LX, y);
+    ctx.textAlign = 'right'; ctx.fillText(o.t != null ? fmtTime(o.t) : r.left[o.id] ? 'left' : 'racing...', RX, y);
+  });
+  ctx.textAlign = 'center'; ctx.fillStyle = '#bcd0ff'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif';
+  ctx.fillText(raceLabel(state.race) + (NET.role === 'host' ? '' : '  -  the host picks the next race'), VW / 2, RR.MOBILE ? 360 : 212);
+  drawButtons();
+}
+function drawModeResults(r) {
+  if (r.mode === 'net') return drawNetResults(r);
+  ctx.setTransform(S, 0, 0, S, 0, 0);
+  ctx.fillStyle = '#0d1a4a'; ctx.fillRect(0, 0, VW, VH);
+  const ghost = r.mode === 'ghost', won = r.otherTime == null ? null : r.myTime < r.otherTime;
+  const head = ghost ? (won ? 'YOU BEAT YOUR GHOST!' : 'THE GHOST WINS') : (won == null ? 'FINISHED!' : won ? 'YOU WIN!' : 'YOUR FRIEND WINS');
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = won === false ? '#ff8a7a' : '#ffcf40'; ctx.font = 'bold 22px "Trebuchet MS","Segoe UI",sans-serif';
+  ctx.fillText(head, VW / 2, RR.MOBILE ? 110 : 44);
+  const LX = RR.MOBILE ? 30 : 120, RX = RR.MOBILE ? 240 : 360, TY = RR.MOBILE ? 190 : 100;
+  ctx.font = 'bold 15px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillStyle = '#fff';
+  ctx.textAlign = 'left'; ctx.fillText('You', LX, TY); ctx.textAlign = 'right'; ctx.fillText(r.myTime != null ? fmtTime(r.myTime) : '--:--.--', RX, TY);
+  ctx.fillStyle = '#9fe9ff'; ctx.textAlign = 'left'; ctx.fillText(ghost ? 'Ghost (your best)' : 'Friend', LX, TY + 26);
+  ctx.textAlign = 'right'; ctx.fillText(r.otherTime != null ? fmtTime(r.otherTime) : 'still racing...', RX, TY + 26);
+  ctx.textAlign = 'center'; ctx.font = 'bold 11px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillStyle = '#bcd0ff';
+  const gap = r.otherTime != null && r.myTime != null ? Math.abs(r.myTime - r.otherTime).toFixed(2) + ' s' : '';
+  ctx.fillText('Race ' + (state.track + 1) + (gap ? '  -  gap ' + gap : '') + (r.newBest ? '  -  NEW BEST! Ghost updated.' : ''), VW / 2, TY + 56);
+
+  drawButtons();
+}
 function drawResults() {
   const r = state.result, race = state.race;
+  if (r && r.mode) { drawModeResults(r); return; }
   ctx.setTransform(S, 0, 0, S, 0, 0);
   ctx.fillStyle = '#0d1a4a'; ctx.fillRect(0, 0, VW, VH);
   ctx.fillStyle = 'rgba(120,150,255,0.10)'; (RR.MOBILE ? [20, 60, 100, 170, 210, 250] : [40, 100, 150, 330, 380, 440]).forEach(x => ctx.fillRect(x, 0, 2, VH));
   ctx.save();
   const players = r.standings.map((s, i) => ({ s, pos: i + 1 })).filter(o => o.s.player >= 0);
-  const best = save.best[race.trackIndex];
+  const best = race.custom ? (save.customBest || {})[state.custom && state.custom.def.id] : save.best[race.trackIndex];
   if (!race.twoPlayer) {
     const p = r.pos, num = String(p), suf = ordinal(p), sc = 13;
     const w = RR.textWidth(num, sc) + 6 + RR.textWidth(suf, 5), x0 = Math.round(VW / 2 - w / 2);
@@ -1952,7 +3452,7 @@ function drawResults() {
     ctx.font = 'bold 10px "Trebuchet MS","Segoe UI",sans-serif'; ctx.textAlign = 'left'; ctx.fillText('Best Time', LX, TY + 18);
     ctx.textAlign = 'right'; ctx.fillText(best ? fmtTime(best) : '--:--.--', RX, TY + 18);
     ctx.textAlign = 'center'; ctx.font = 'bold 10px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillStyle = '#bcd0ff';
-    const msg = 'Race ' + (race.trackIndex + 1) + ' — ' + (p <= 3 ? (r.unlockedNext ? 'Race ' + (race.trackIndex + 2) + ' unlocked!' : 'Qualified') : 'Finish in the top 3 to qualify');
+    const msg = race.custom ? raceLabel(race) + (r.newBest ? ' — new best time!' : '') : 'Race ' + (race.trackIndex + 1) + ' — ' + (p <= 3 ? (r.unlockedNext ? 'Race ' + (race.trackIndex + 2) + ' unlocked!' : 'Qualified') : 'Finish in the top 3 to qualify');
     ctx.fillText(msg, VW / 2, RR.MOBILE ? 290 : 176);
     if (r.newCar) { ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 12px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillText('New car unlocked: ' + r.newCar + '!', VW / 2, RR.MOBILE ? 312 : 194); }
   } else {
@@ -1963,13 +3463,17 @@ function drawResults() {
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 13px "Trebuchet MS",sans-serif'; ctx.textBaseline = 'middle';
       ctx.fillText(o.s.name + ' — ' + (o.s.time != null ? fmtTime(o.s.time) : '--:--.--'), cx, 120);
     });
-    ctx.fillStyle = '#bcd0ff'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Race ' + (race.trackIndex + 1), VW / 2, 176);
+    ctx.fillStyle = '#bcd0ff'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.fillText(raceLabel(race), VW / 2, 176);
   }
   ctx.restore();
   drawButtons();
 }
 
 // Credit to the original game, under Achievements: shows 10 s, hides 10 s, repeating (with a short fade).
+function drawVersion() {
+  ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.font = '7px "Trebuchet MS","Segoe UI",sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillStyle = 'rgba(255,220,210,0.45)'; ctx.textAlign = 'center'; ctx.fillText('v' + RR.VERSION, VW / 2, VH - 4); ctx.restore();
+}
 function drawTribute() {
   const cyc = (performance.now() / 1000) % 20; if (cyc >= 10) return;
   const a = Math.min(1, cyc / 0.5, (10 - cyc) / 0.5);
@@ -2038,8 +3542,8 @@ function drawInfo() {
                        '2 Player: P1 A / D steer + W accelerate, P2 Left / Right + Up accelerate',
                        'Esc or P pause   |   Gamepad: stick / D-pad steer, A or RT accelerate'], y);
   if (!RR.MOBILE) y = sec('Hotkeys', ['1-7 change song   |   - / + music volume   |   [ / ] sound volume   |   F3 telemetry'], y);
-  y = sec('Music (supplied by Anthony)', ['Waves (main screen)   |   Empty, Pocket 2, Wasted Time, Rally, Rally 3, Stored 2'], y);
-  y = sec('Sounds', ['Engine loop by qubodup, tyre squeal by audible-edge (CC-BY 3.0)', 'Pickup, nitro, cone and finish sounds by Kenney.nl (CC0)   |   Buzzer, clicks, collision by Anthony'], y);
+  y = sec('Music (supplied by SecretSea)', ['Waves (main screen)   |   Empty, Pocket 2, Wasted Time, Rally, Rally 3, Stored 2'], y);
+  y = sec('Sounds', ['Engine loop by qubodup, tyre squeal by audible-edge (CC-BY 3.0)', 'Pickup, nitro, cone and finish sounds by Kenney.nl (CC0)   |   Buzzer, clicks, collision by SecretSea'], y);
   ctx.fillStyle = '#a9c2ff'; ctx.font = '9px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillText('(click or press Enter / Esc to close)', VW / 2, VH - 14);
   ctx.restore();
 }
@@ -2065,15 +3569,17 @@ function frame(now) {
 }
 function tick(dt) {
   state.t += dt;
+  chatPanel(state.net && ['carselect', 'trackselect', 'netwait', 'results', 'race'].includes(state.screen) && !state.notice && !(RR.MOBILE && ['trackselect', 'results', 'race'].includes(state.screen)), state.screen === 'trackselect' || state.screen === 'race' ? 'bl' : state.screen === 'results' ? 'bc' : '');
   if (state.songToast) state.songToast.t -= dt;
   pollPadsForMenu();
   if (state.screen === 'title' && state.t > 3) go('menu');
   A.setPaused(state.screen === 'race' && state.paused);
   if ((state.musicWatchT = (state.musicWatchT || 0) + dt) > 0.5) { state.musicWatchT = 0; A.musicWatch(); }
-  if (state.screen === 'race' && state.race && !state.paused) {
+  if (state.screen === 'race' && state.race && (!state.paused || state.race.mode === 'net')) {
     const race = state.race;
     state.acc += dt;
     const inputs = [playerInput(0), playerInput(1)];
+    netTick(race, dt);
     while (state.acc >= RR.SIM_DT) {
       const replay = race.video && state.videoMode === 'replay';
       RR.step(race, RR.SIM_DT, replay ? [videoInput(race)] : inputs); handleEvents(race); state.acc -= RR.SIM_DT;
@@ -2086,6 +3592,7 @@ function tick(dt) {
         if (f >= V.replayEnd) { state.videoMode = 'drive'; notice('Replay finished: on average my car was ' + (race.gapSum / race.gapN).toFixed(0) + ' px from yours\n(the car is about 26 px long; it was re-aligned about every 3 s).\nYou can drive now.' + (RR.MOBILE ? '\nPause > Restart starts a free drive.' : ' R replays again, F restarts the free drive.') + ''); break; }
       }
     }
+    fxUpdate(race, dt);
     state.cams.forEach((cam, i) => {
       const c = cam.car, Z = RR.ZOOM, tx = c.x + Math.max(-70 * Z, Math.min(70 * Z, c.vx * 0.45)), ty = c.y + Math.max(-55 * Z, Math.min(55 * Z, c.vy * 0.45));
       const k = 1 - Math.exp(-6 * dt); if (Math.hypot(tx - cam.x, ty - cam.y) > 260) { cam.x = tx; cam.y = ty; } cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k;
@@ -2094,26 +3601,24 @@ function tick(dt) {
     if (race.phase === 'finished' && race.endT <= 0) finishRace();
   }
 }
-function flushSkids(race) {
-  const v = race.T.vis.getContext('2d'); v.fillStyle = 'rgba(50,50,50,0.22)';
-  for (const [x, y, a] of race.skidQueue) {
-    const fx = Math.sin(a), fy = -Math.cos(a), rx = Math.cos(a), ry = Math.sin(a);
-    for (const s of [-7, 7]) v.fillRect(Math.round(x + rx * s - fx * 9) - 1, Math.round(y + ry * s - fy * 9) - 1, 3, 2);
-  }
-  race.skidQueue.length = 0;
-}
+function flushSkids(race) { race.skidQueue.length = 0; }
 function render() {
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
   switch (state.screen) {
     case 'title': menuBG(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(20,0,0,0.5)'; ctx.fillRect(0, 0, VW, VH); drawLogo(VW / 2, VH / 2 - 6, 1.5); break;
-    case 'menu': menuBG(); if (RR.MOBILE) drawLogo(VW / 2, 120, 1.0); else drawLogo(VW / 2, 56, 0.95); drawButtons(); drawTribute(); break;
+    case 'menu': menuBG(); if (RR.MOBILE) drawLogo(VW / 2, 120, 1.0); else drawLogo(VW / 2, 56, 0.95); drawButtons(); drawTribute(); drawVersion(); break;
     case 'options': menuBG(); title('Options', 24); drawButtons();
       ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = '#ffb0a0'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center';
-      if (!RR.MOBILE) ctx.fillText('Settings below the line are PC additions (not in the original).  Left/Right changes volume.', VW / 2, 144);
+      if (!RR.MOBILE) ctx.fillText('Settings below the line are PC additions (not in the original).  Left/Right changes volume.', VW / 2, 138);
       ctx.restore(); break;
     case 'carselect': drawCarSelect(); break;
-    case 'trackselect': menuBG(); title(state.twoPlayer ? '2 Player - Choose Race' : 'Choose Race', 22); drawButtons(); break;
+    case 'trackselect': menuBG(); title(state.net ? 'Wi-Fi Race - Choose Race' : state.twoPlayer ? '2 Player - Choose Race' : 'Choose Race', 22); drawButtons(); break;
+    case 'netwait': menuBG(); title('Wi-Fi Race', 40);
+      ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 13px "Trebuchet MS",sans-serif';
+      ctx.fillText('Connected!', VW / 2, VH / 2 - 20); ctx.fillStyle = '#bcd0ff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif';
+      ctx.fillText('Waiting for the host to pick a race' + '...'.slice(0, 1 + ((state.t * 2) | 0) % 3), VW / 2, VH / 2);
+      ctx.fillStyle = '#9fe9ff'; ctx.fillText('In this room: ' + (NET.rosterList || []).map(p => 'P' + (p.id + 1) + (p.id === NET.myId ? ' (you)' : '') + (p.car == null ? ' - picking' : ' - ' + RR.CARS[p.car].name.replace('Team ', ''))).join('   '), VW / 2, VH / 2 + 20); ctx.restore(); drawButtons(); break;
     case 'race': {
       const race = state.race; flushSkids(race);
       if (state.cams.length === 1) drawView(race, state.cams[0], 0, 0, VW, VH);
@@ -2135,7 +3640,7 @@ requestAnimationFrame(frame);
 
 // ---------------- test / debug hooks ----------------
 RR.test = {
-  save: () => save, persist, go, buttonsList: () => buttons().map(b => ({ label: b.label, x: b.x, y: b.y, w: b.w, h: b.h })), startRace: (ti, seed, opts) => { if (opts) Object.assign(state, opts); startRace(ti, seed); },
+  save: () => save, persist, go, net: { hostRoom: (c, m) => hostRoom(c, m), joinRoom: c => joinRoom(c, t => { window.__netStatus = t; }), state: () => ({ ok: NET.ok, role: NET.role, myId: NET.myId, peers: NET.peers.length, roster: NET.rosterList, chat: NET.chat.map(c => c.id + ':' + c.text) }), toCars: () => { state.net = true; NET.ok = true; netOverlayClose(); go('carselect'); }, chat: w => sendChat(w), pickCustom: d => netPickRace(-1, d) }, pickCar: () => pickCar(), playCustom: (d, h) => playCustom(d, h), activate: i => activate(buttons()[i]), loadGhost: i => loadGhost(i), buttonsList: () => buttons().map(b => ({ label: b.label, x: b.x, y: b.y, w: b.w, h: b.h })), startRace: (ti, seed, opts) => { if (opts) Object.assign(state, opts); startRace(ti, seed); },
   // run the current race headless with every car (incl. players) autopiloted
   simulate(seconds, autopilotPlayers) {
     const race = state.race; if (autopilotPlayers) race.cars.forEach(c => c.ai = true);
