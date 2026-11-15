@@ -31,7 +31,7 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
-RR.VERSION = '1.6.2';
+RR.VERSION = '1.6.3';
 RR.AI_DRIFT = { grip: 1, turn: 1, brake: 1, bendFrom: 0.2, bendSpan: 0.35, minSpeed: 100, edge: 0.92 };   // bots slide only in real corners, ease off near the road edge   // bots: lower grip / sharper turn-in = more sliding in corners
 RR.RUBBER = { close: 160, ramp: 200, boost: 0.035, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
 
@@ -3110,7 +3110,7 @@ function textPrompt(titleTxt, info, value, onOk) {
 }
 function askName() {
   textPrompt('Your name', 'Shown in results, leaderboards, Wi-Fi rooms and chat. Letters, numbers, spaces, _ . - (max 12). Leave empty to stay anonymous.', myName() || '',
-    v => { save.playerName = cleanName(v); persist(); toast(myName() ? 'Name set: ' + myName() : 'Name cleared - you are anonymous'); });
+    v => { save.playerName = cleanName(v); persist(); try { Object.keys(save.lb || {}).filter(k => /^[rds]\d+$/.test(k) && save.lb[k][0]).forEach(k => lbSubmit(k, save.lb[k][0].v)); } catch (e) {} toast(myName() ? 'Name set: ' + myName() : 'Name cleared - you are anonymous'); });
 }
 // ---------------- stats, challenges, decals ----------------
 function stats0() { const s = save.stats = save.stats || {}; ['races', 'wins', 'starts', 'boosts', 'ghostWins', 'netRaces'].forEach(k => { if (s[k] == null) s[k] = 0; }); s.customIds = s.customIds || []; return s; }
@@ -3181,35 +3181,36 @@ function lbAdd(key, v, high) {
   if (v == null || !isFinite(v)) return; save.lb = save.lb || {}; const L = save.lb[key] = save.lb[key] || [];
   const nm = myName() || 'YOU'; L.push({ v: high ? v : +v.toFixed(3), car: state.carSel[0], n: nm, d: Date.now() });
   L.sort((a, b) => high ? b.v - a.v : a.v - b.v); L.length = Math.min(L.length, 10); persist();
-  if (L[0] && L[0].v === (high ? v : +v.toFixed(3)) && /^[rds]\d+$/.test(key)) lbSubmit(key, L[0].v, high);   // a new best on this device -> the shared board
+  if (L[0] && L[0].v === (high ? v : +v.toFixed(3)) && /^[rds]\d+$/.test(key)) lbSubmit(key, L[0].v);   // a new best on this device -> the shared board
 }
-// ---- shared leaderboards (everyone): one small public JSON file at jsonblob.com, top 10 per board, one entry per device ----
-RR.LB_URL = RR.LB_URL || '';   // set to a JSON endpoint (GET + PUT) to turn the shared boards on
-const LBG = { data: null, at: 0, status: '' };
-function devId() { if (!save.devId) { save.devId = Math.random().toString(36).slice(2, 10); persist(); } return save.devId; }
-function lbClean(d) {   // only keep well-formed entries
-  const out = {}; const b = d && typeof d.b === 'object' ? d.b : {};
-  for (const k of Object.keys(b)) { if (!/^[rds]\d+$/.test(k) || !Array.isArray(b[k])) continue;
-    out[k] = b[k].filter(e => e && typeof e.v === 'number' && isFinite(e.v) && e.v > 0 && e.v < 1e7).slice(0, 10).map(e => ({ i: String(e.i || '').slice(0, 10), n: cleanName(e.n) || 'Anonymous', v: e.v, c: (e.c | 0) % RR.CARS.length })); }
-  return { b: out };
+// ---- shared leaderboards (everyone): Supabase table 'scores' (one row per board per device). Reads are public;
+// the only write is the submit_score function, which keeps each device's best and checks every value.
+RR.LB = RR.LB || { url: 'https://toisxfjtpmpeezflxvan.supabase.co/rest/v1/', key: 'sb_publishable_eH2k60y1K6ZVu3yNrioCCw_SwLR3cRp' };
+RR.LB_URL = RR.LB && RR.LB.url;
+const LBG = { boards: {}, status: '' };
+function devId() { if (!save.devId || !/^[a-z0-9]{4,12}$/.test(save.devId)) { save.devId = Math.random().toString(36).slice(2, 10).replace(/[^a-z0-9]/g, 'x').padEnd(8, '0'); persist(); } return save.devId; }
+function lbFetch(key, force) {
+  if (!RR.LB_URL || !key) return Promise.resolve(null);
+  const B = LBG.boards[key] = LBG.boards[key] || { list: null, at: 0 };
+  if (!force && (B.busy || Date.now() - B.at < 30000)) return Promise.resolve(B.list);
+  B.busy = true; const high = key[0] === 'd';
+  return fetch(RR.LB.url + 'scores?select=dev,name,v,car&board=eq.' + encodeURIComponent(key) + '&order=v.' + (high ? 'desc' : 'asc') + '&limit=10', { headers: { apikey: RR.LB.key }, cache: 'no-store' })
+    .then(r => { if (!r.ok) throw 0; return r.json(); })
+    .then(rows => { B.list = (Array.isArray(rows) ? rows : []).filter(e => e && typeof e.v === 'number' && isFinite(e.v)).map(e => ({ i: String(e.dev || ''), n: cleanName(e.name) || 'Anonymous', v: e.v, c: (e.car | 0) % RR.CARS.length }));
+      B.at = Date.now(); B.busy = false; LBG.status = ''; return B.list; })
+    .catch(() => { B.busy = false; B.at = Date.now(); LBG.status = 'Can\'t reach the shared board right now (offline?).'; return null; });
 }
-function lbFetch(force) {
-  if (!RR.LB_URL) return Promise.resolve(null);
-  if (!force && (LBG.busy || Date.now() - LBG.at < 30000)) return Promise.resolve(LBG.data);
-  LBG.busy = true; LBG.status = LBG.data ? '' : 'Loading the shared board...';
-  return fetch(RR.LB_URL, { headers: { Accept: 'application/json' }, cache: 'no-store' }).then(r => { if (!r.ok) throw 0; return r.json(); })
-    .then(d => { LBG.data = lbClean(d); LBG.at = Date.now(); LBG.status = ''; LBG.busy = false; return LBG.data; })
-    .catch(() => { LBG.busy = false; LBG.at = Date.now(); LBG.status = 'Can\'t reach the shared board right now (offline?). Showing this device.'; return null; });
-}
-function lbSubmit(key, v, high) {
+function lbSubmit(key, v) {
   if (!RR.LB_URL) return;
-  lbFetch(true).then(d => { if (!d) return;
-    const L = d.b[key] = d.b[key] || [], me = devId(), e = L.find(x => x.i === me), entry = { i: me, n: myName() || 'Anonymous', v, c: state.carSel[0] };
-    if (e) { if (high ? v <= e.v : v >= e.v) { if (e.n === entry.n) return; e.n = entry.n; } else Object.assign(e, entry); } else L.push(entry);
-    L.sort((a, b) => high ? b.v - a.v : a.v - b.v); L.length = Math.min(L.length, 10);
-    return fetch(RR.LB_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(d) }).then(r => { if (r.ok) { LBG.data = d; LBG.at = Date.now(); } });
-  }).catch(() => {});
+  fetch(RR.LB.url + 'rpc/submit_score', { method: 'POST', headers: { apikey: RR.LB.key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_board: key, p_dev: devId(), p_name: myName() || 'Anonymous', p_v: v, p_car: state.carSel[0] | 0 }) })
+    .then(r => { if (r.ok && LBG.boards[key]) LBG.boards[key].at = 0; }).catch(() => {});
 }
+function lbSyncOnce() {   // first run with shared boards: send the bests already on this device
+  if (!RR.LB_URL || save.lbSynced) return; save.lbSynced = 1; persist();
+  try { Object.keys(save.lb || {}).filter(k => /^[rds]\d+$/.test(k) && save.lb[k][0]).forEach((k, i) => setTimeout(() => lbSubmit(k, save.lb[k][0].v), 300 * i)); } catch (e) {}
+}
+setTimeout(() => { try { lbSyncOnce(); } catch (e) {} }, 4000);
 function lbList() {   // every board, in order
   const out = []; for (let i = 0; i < 18; i++) out.push({ key: 'r' + i, name: 'Race ' + (i + 1), cat: 'Races' });
   RR.DRIFT_LEVELS.forEach((L, k) => out.push({ key: 'd' + k, name: L.name, cat: 'Drift Trials', high: true }));
@@ -3221,18 +3222,19 @@ function boardButtons() {
   const L = lbList(), go2 = d => { state.lbSel = ((state.lbSel || 0) + d + L.length) % L.length; }, jump = cat => { const i = L.findIndex(b => b.cat === cat); if (i >= 0) state.lbSel = i; else notice('No ' + cat + ' yet.'); };
   return [B(8, 246, 64, 20, 'Back', () => go('menu')), B(150, 238, 80, 26, '< Prev', () => go2(-1), { blue: 1 }), B(250, 238, 80, 26, 'Next >', () => go2(1), { blue: 1 }),
     B(70, 40, 80, 20, 'Races', () => jump('Races')), B(156, 40, 80, 20, 'Drift Trials', () => jump('Drift Trials')), B(242, 40, 80, 20, 'Story', () => jump('Story')), B(328, 40, 80, 20, 'My Tracks', () => jump('My Tracks')),
-    ...(!RR.LB_URL ? [] : [B(352, 238, 116, 26, state.lbScope === 'me' ? 'Showing: This device' : 'Showing: Everyone', () => { state.lbScope = state.lbScope === 'me' ? 'all' : 'me'; if (state.lbScope === 'all') lbFetch(true); })])];
+    ...(!RR.LB_URL ? [] : [B(352, 238, 116, 26, state.lbScope === 'me' ? 'Showing: This device' : 'Showing: Everyone', () => { state.lbScope = state.lbScope === 'me' ? 'all' : 'me'; if (state.lbScope === 'all') { const b = lbList()[(state.lbSel || 0) % lbList().length]; lbFetch(b.key, true); } })])];
 }
 function drawBoards() {
   menuBG(); ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(10,0,0,0.55)'; ctx.fillRect(0, 0, VW, VH);
   title('Leaderboards', RR.MOBILE ? 24 : 18); ctx.setTransform(S, 0, 0, S, 0, 0);
   const all = lbList(), b = all[(state.lbSel || 0) % all.length], M = RR.MOBILE, shared = !!RR.LB_URL && state.lbScope !== 'me' && /^[rds]\d+$/.test(b.key);
-  if (shared) lbFetch();
-  const L = shared && LBG.data ? (LBG.data.b[b.key] || []).map(e => ({ n: e.n, v: e.v, car: e.c, mine: e.i === save.devId })) : ((save.lb || {})[b.key]) || [];
+  let L = ((save.lb || {})[b.key]) || [], loading = false;
+  if (shared) { lbFetch(b.key); const B = LBG.boards[b.key]; if (B && B.list) L = B.list.map(e => ({ n: e.n, v: e.v, car: e.c, mine: e.i === save.devId })); else if (!LBG.status) { L = []; loading = true; } }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 14px "Trebuchet MS",sans-serif';
   ctx.fillText(b.cat + ':  ' + b.name, VW / 2, M ? 104 : 74);
   const x0 = M ? 20 : 110, x1 = M ? 250 : 370, y0 = M ? 124 : 88;
-  if (!L.length) { ctx.fillStyle = '#ffd0c0'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; ctx.fillText(b.high ? 'No scores yet - play this Drift Trial to set one!' : 'No times yet - finish this race to set one!', VW / 2, y0 + 40); }
+  if (loading) { ctx.fillStyle = '#ffd0c0'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; ctx.fillText('Loading the shared board...', VW / 2, y0 + 40); }
+  else if (!L.length) { ctx.fillStyle = '#ffd0c0'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; ctx.fillText(b.high ? 'No scores yet - play this Drift Trial to set one!' : 'No times yet - finish this race to set one!', VW / 2, y0 + 40); }
   L.forEach((e, i) => {
     const y = y0 + i * (M ? 26 : 14.5); ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.10)'; ctx.fillRect(x0, y - 6.5, x1 - x0, 13);
     ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = i === 0 ? '#ffcf40' : i === 1 ? '#e0e8f0' : i === 2 ? '#e8a060' : '#fff';
@@ -3242,7 +3244,7 @@ function drawBoards() {
     ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.fillText(b.high ? String(e.v) : fmtTime(e.v), x1 - 4, y);
   });
   ctx.fillStyle = 'rgba(255,208,192,0.7)'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('Board ' + ((state.lbSel || 0) % all.length + 1) + ' of ' + all.length + '  -  ' + (shared ? (LBG.status || 'top 10 players everywhere (one entry each)') : 'top 10 runs on this device'), VW / 2, M ? 408 : 230);
+  ctx.fillText('Board ' + ((state.lbSel || 0) % all.length + 1) + ' of ' + all.length + '  -  ' + (shared ? (LBG.status ? LBG.status + ' Showing this device.' : 'top 10 players everywhere (one entry each)') : 'top 10 runs on this device'), VW / 2, M ? 408 : 230);
   ctx.restore(); drawButtons();
 }
 // ---------------- News: what's new + an ideas / questions box (posts go to a public relay the developer reads) ----------------
