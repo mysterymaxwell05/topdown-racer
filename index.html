@@ -31,27 +31,27 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
-RR.VERSION = '1.6.0';
-RR.AI_DRIFT = { grip: 0.6, turn: 1.2, brake: 0.72 };   // bots: lower grip / sharper turn-in = more sliding in corners
-RR.RUBBER = { close: 160, ramp: 200, boost: 0.05, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
+RR.VERSION = '1.6.2';
+RR.AI_DRIFT = { grip: 1, turn: 1, brake: 1, bendFrom: 0.2, bendSpan: 0.35, minSpeed: 100, edge: 0.92 };   // bots slide only in real corners, ease off near the road edge   // bots: lower grip / sharper turn-in = more sliding in corners
+RR.RUBBER = { close: 160, ramp: 200, boost: 0.035, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
 
 // ---- Drift Trials: solo drift levels (no story). Score comes from sliding; chain drifts for a multiplier. ----
-RR.DRIFT_SCORE = { angle: 0.26, speed: 70, rate: 0.5, step: 1.5, maxMult: 5, grace: 0.9, crash: 45 };
-RR.DRIFT_LEVELS = [
-  { name: 'Petal Warm-Up', theme: 'sakura', time: 'day', w: 150, laps: 2, pts: [[3, 10], [3, 4], [6, 2], [20, 2], [23, 4], [23, 10], [20, 13], [6, 13]] },
-  { name: 'Meadow Figure', theme: 'meadow', time: 'day', w: 145, laps: 2, pts: [[3, 12], [3, 4], [7, 2], [12, 5], [17, 2], [22, 4], [22, 12], [17, 15], [12, 12], [7, 15]] },
-  { name: 'Snow Slide', theme: 'snow', time: 'sunset', w: 145, laps: 2, pts: [[3, 11], [3, 3], [10, 3], [13, 7], [16, 3], [24, 3], [24, 11], [16, 11], [13, 15], [10, 11]] },
-  { name: 'Desert Donuts', theme: 'desert', time: 'day', w: 150, laps: 3, pts: [[3, 9], [6, 3], [14, 2], [22, 3], [25, 9], [22, 15], [14, 16], [6, 15]] },
-  { name: 'Gear Town Blocks', theme: 'city', time: 'day', w: 140, laps: 2, pts: [[3, 13], [3, 3], [9, 3], [9, 8], [14, 8], [14, 3], [24, 3], [24, 13]] },
-  { name: 'Neon Esses', theme: 'neon', time: 'night', w: 140, laps: 2, pts: [[3, 14], [3, 3], [8, 3], [11, 6], [14, 3], [19, 3], [22, 6], [25, 3], [25, 14], [19, 14], [16, 10], [13, 14]] },
-  { name: 'Misty Switchbacks', theme: 'mist', time: 'sunset', w: 135, laps: 2, pts: [[3, 15], [3, 3], [23, 3], [23, 7], [8, 7], [8, 11], [23, 11], [23, 15]] },
-  { name: 'Storm Spiral', theme: 'storm', time: 'day', w: 140, laps: 2, pts: [[3, 15], [3, 3], [25, 3], [25, 15], [19, 15], [17, 9], [11, 9], [9, 15]] },
-  { name: 'Coast Carousel', theme: 'coast', time: 'sunset', w: 145, laps: 2, pts: [[4, 12], [3, 6], [6, 3], [11, 4], [14, 7], [17, 4], [22, 3], [25, 6], [24, 12], [20, 15], [14, 13], [8, 15]] },
-  { name: 'Inferno Run', theme: 'volcano', time: 'sunset', w: 135, laps: 2, pts: [[3, 15], [3, 3], [9, 3], [12, 7], [9, 10], [14, 12], [18, 8], [15, 4], [21, 2], [26, 5], [24, 10], [26, 15]] },
+RR.DRIFT_SCORE = { angle: 0.26, speed: 70, rate: 0.5, step: 1.5, maxMult: 5, grace: 0.5, crash: 45, zoneBend: 0.45, zoneMult: 2, bots: 5, botDrifter: 1.7, placeBonus: [1.5, 1.3, 1.15] };
+RR.DRIFT_LEVELS = [   // wide, flowing tracks; corners become marked DRIFT ZONES (x2 points). You race 5 bots while you score.
+  { name: 'Petal Warm-Up', theme: 'sakura', time: 'day', w: 150, laps: 2, diff: 'easy', pts: [[3, 12], [3, 5], [6, 2], [13, 2], [16, 5], [19, 2], [24, 2], [27, 5], [27, 12], [24, 15], [17, 15], [14, 12], [11, 15], [6, 15]] },
+  { name: 'Meadow Esses', theme: 'meadow', time: 'day', w: 145, laps: 2, diff: 'easy', pts: [[3, 14], [3, 4], [5, 2], [9, 2], [11, 4], [11, 8], [13, 10], [17, 10], [19, 8], [19, 4], [21, 2], [25, 2], [27, 4], [27, 14], [25, 16], [5, 16]] },
+  { name: 'Snow Hairpins', theme: 'snow', time: 'sunset', w: 140, laps: 2, diff: 'easy', pts: [[3, 15], [3, 3], [8, 3], [10, 5], [10, 10], [12, 12], [14, 10], [14, 5], [16, 3], [22, 3], [24, 5], [24, 10], [26, 12], [28, 12], [28, 15]] },
+  { name: 'Desert Sweepers', theme: 'desert', time: 'day', w: 150, laps: 2, diff: 'normal', pts: [[3, 9], [5, 4], [9, 2], [15, 3], [19, 6], [23, 4], [27, 6], [28, 11], [25, 15], [19, 16], [15, 13], [10, 16], [5, 14]] },
+  { name: 'Gear Town Chicanes', theme: 'city', time: 'day', w: 140, laps: 2, diff: 'normal', pts: [[3, 14], [3, 3], [8, 3], [10, 6], [13, 6], [15, 3], [22, 3], [24, 6], [27, 6], [27, 14], [22, 14], [20, 11], [17, 11], [15, 14]] },
+  { name: 'Neon Snake', theme: 'neon', time: 'night', w: 140, laps: 2, diff: 'normal', pts: [[3, 16], [3, 3], [7, 3], [9, 6], [12, 3], [16, 3], [18, 6], [21, 3], [25, 3], [27, 6], [27, 16], [23, 16], [21, 12], [18, 16], [14, 16], [12, 12], [9, 16]] },
+  { name: 'Misty Switchbacks', theme: 'mist', time: 'sunset', w: 135, laps: 2, diff: 'normal', pts: [[3, 16], [3, 4], [5, 2], [23, 2], [25, 4], [23, 6], [9, 6], [7, 8], [9, 10], [23, 10], [25, 12], [23, 14], [5, 14]] },
+  { name: 'Storm Spiral', theme: 'storm', time: 'day', w: 140, laps: 2, diff: 'hard', pts: [[3, 15], [3, 4], [5, 2], [23, 2], [25, 4], [25, 13], [23, 15], [19, 15], [17, 12], [11, 12], [9, 15]] },
+  { name: 'Coast Carousel', theme: 'coast', time: 'sunset', w: 145, laps: 2, diff: 'hard', pts: [[4, 12], [3, 6], [6, 3], [11, 4], [14, 7], [17, 4], [22, 3], [25, 6], [24, 12], [20, 15], [14, 13], [8, 15]] },
+  { name: 'Inferno Run', theme: 'volcano', time: 'sunset', w: 135, laps: 2, diff: 'hard', pts: [[3, 15], [3, 3], [9, 3], [12, 7], [9, 10], [14, 12], [18, 8], [15, 4], [21, 2], [26, 5], [24, 10], [26, 15]] },
 ];
 RR.REVERSE = { top: 70, acc: 90, brake: 320, stop: 260, engageSpeed: 18, turn: 0.7 };   // reverse: ~28% of top speed, gentle
 RR.START_BOOST = { window: 0.45, boost: 0.3 };   // press gas within 0.45 s before GO (and hold) = a short, subtle burst of nitro
-RR.DRIFT_METER = { angle: 0.26, speed: 80, time: 1.5, grace: 0.9, boost: 1.1 };   // up to 0.9 s off-drift without losing the meter   // 15 deg slide above 80 px/s for 1.5 s = 1.1 s of nitro
+RR.DRIFT_METER = { angle: 0.26, speed: 80, time: 1.5, grace: 0.5, boost: 1.1 };   // up to 0.5 s off-drift without losing the meter   // 15 deg slide above 80 px/s for 1.5 s = 1.1 s of nitro
 RR.NUM_CARS = 8;           // [observed] "POS 5 / 8"
 RR.PLAYER_GRID_SLOT = 7;   // [observed] player car #8 at back of grid in race-16 start screenshot
 
@@ -171,7 +171,7 @@ RR.RUNOFF = 64;           // wanted run-off from road edge to rail, where the la
 RR.HD = RR.MOBILE ? 1.5 : 2;   // track art detail (pixels per world unit)
 
 // Difficulty: opponent stat scale by race index [inferred: reviewer reports a steep late-game spike]
-RR.aiScaleForRace = (i) => 0.955 + 0.0075 * i;   // playtest 14: early races much tougher (race 1 was 0.90), race 18 about the same
+RR.aiScaleForRace = (i) => 0.955 + 0.0075 * Math.min(i, 9) + 0.005 * Math.max(0, i - 9);   // v1.6.1: later races eased (race 18 1.083 -> 1.063)   // playtest 14: early races much tougher (race 1 was 0.90), race 18 about the same
 RR.ZOOM = 1.12;   // RR2 video shows ~17 car lengths across; this shows ~20.7            // world zoom-out factor (playtest request); HUD unaffected
 
 // ---------------- Story mode: "MIDNIGHT HORIZON - Legend of the Eight Kings" ----------------
@@ -1462,7 +1462,7 @@ RR.createRace = function (opts) {
   const rnd = RR.rng(opts.raceSeed || (Date.now() & 0xffffff));
   const race = { T, rnd, cars: [], cones: [], pickups: [], time: 0, phase: 'countdown', countdown: RR.COUNT_LEAD + 3 * RR.COUNT_STEP + 0.04,
     trackIndex: opts.trackIndex, twoPlayer: !!opts.twoPlayer, finishOrder: [], events: [], skidQueue: [], video: !!opts.videoTest, laps: opts.videoTest ? 999 : def ? Math.max(1, Math.min(9, def.laps || 3)) : RR.LAPS, custom: !!def };
-  if (opts.drift) race.drift = { score: 0, chain: 0, chainT: 0, mult: 1, grace: 0, live: false, bestChain: 0, crashes: 0 };
+  if (opts.drift) { race.drift = { score: 0, chain: 0, chainT: 0, mult: 1, grace: 0, live: false, bestChain: 0, crashes: 0, zonePts: 0 }; race.driftZone = driftZones(T); }
   if (opts.videoTest) return videoRace(race, opts);
   if (opts.mode) return modeRace(race, opts);
   const used = new Set(opts.players.map(p => p.carId));
@@ -1512,7 +1512,7 @@ RR.createRace = function (opts) {
 
 function makeCar(liv, stats, scale, g) {
   const bot = scale !== 1;   // player cars use their stats exactly (they're fitted to the RR2 video); bots get a little grip/turn with pace
-  return { liv, base: { top: stats.top * scale, acc: stats.acc * scale, grip: stats.grip * (bot ? Math.min(1.1, scale + 0.1) * RR.AI_DRIFT.grip : 1), turn: stats.turn * (bot ? Math.min(1.05, 0.9 + scale * 0.12) * RR.AI_DRIFT.turn : 1) },
+  return { liv, base: { top: stats.top * scale, acc: stats.acc * scale, grip: stats.grip * (bot ? Math.min(1.1, scale + 0.1) : 1), turn: stats.turn * (bot ? Math.min(1.05, 0.9 + scale * 0.12) : 1) },
     x: g.x, y: g.y, a: g.a, vx: 0, vy: 0, av: 0, up: { top: 0, acc: 0, grip: 0 }, nitro: 0,
     lap: -1, idx: 0, s: 0, progress: 0, finished: false, finishTime: 0, steer: 0, throttle: false,
     slip: 0, surf: 1, lastProg: 0, stuckT: 0, recover: 0, lastHit: 0, popup: null };
@@ -1554,9 +1554,9 @@ function spawnPickup(race, frac) {
 
 RR.carStats = function (c) {
   const PK = RR.PICKUPS;
-  const rb = 1 + (c.rb || 0);   // bots' catch-up boost (rubber band)
+  const rb = 1 + (c.rb || 0), sl = c.aiSlide || 0, AD = RR.AI_DRIFT;   // bots' catch-up boost (rubber band); bots loosen up only in real corners
   return { top: c.base.top * (1 + PK.S.per * c.up.top) * rb, acc: c.base.acc * (1 + PK.A.per * c.up.acc) * rb,
-    grip: c.base.grip * (1 + PK.T.per * c.up.grip), turn: c.base.turn * (1 + 0.04 * c.up.grip) };
+    grip: c.base.grip * (1 + PK.T.per * c.up.grip) * (1 - (1 - AD.grip) * sl), turn: c.base.turn * (1 + 0.04 * c.up.grip) * (1 + (AD.turn - 1) * sl) };
 };
 
 // Drift Trials scoring: points while sliding (speed x angle), multiplier grows the longer you chain drifts; a short break keeps the chain
@@ -1564,9 +1564,10 @@ function driftScore(race, c, slip, v, dt) {
   const D = race.drift, DS = RR.DRIFT_SCORE, a = Math.abs(slip);
   if (a > DS.angle && v > DS.speed && !(c.recover > 0)) {
     D.live = true; D.grace = DS.grace; D.chainT += dt; D.mult = Math.min(DS.maxMult, 1 + Math.floor(D.chainT / DS.step));
-    D.chain += dt * v * Math.min(1.2, a) * DS.rate * D.mult;
+    const zone = race.driftZone && race.driftZone[c.idx] ? DS.zoneMult : 1; D.inZone = zone > 1;
+    D.chain += dt * v * Math.min(1.2, a) * DS.rate * D.mult * zone;
   } else if (D.live) {
-    D.grace -= dt;
+    D.inZone = false; D.grace -= dt;
     if (D.grace <= 0) bankDrift(race, c);
   }
 }
@@ -1577,6 +1578,17 @@ function bankDrift(race, c) {
   D.chain = 0; D.chainT = 0; D.mult = 1; D.live = false;
 }
 RR.bankDrift = bankDrift;
+// Drift zones: the bendy parts of the track (heading turns > ~20 deg within +-45 units), widened a little; drifting there scores x2
+function driftZones(T) {
+  const N = T.N, k = Math.max(2, Math.round(45 / T.step)), z = new Uint8Array(N), out = new Uint8Array(N), pad = Math.round(30 / T.step);
+  for (let i = 0; i < N; i++) { const d = Math.abs(wrapA(T.H[(i + k) % N] - T.H[(i - k + N) % N])); if (d > RR.DRIFT_SCORE.zoneBend) z[i] = 1; }
+  for (let i = 0; i < N; i++) if (z[i]) for (let j = -pad; j <= pad; j++) out[(i + j + N) % N] = 1;
+  // drop tiny zones
+  const minLen = Math.round(70 / T.step);
+  for (let i = 0; i < N; i++) if (out[i] && !out[(i - 1 + N) % N]) { let n = 0; while (n < N && out[(i + n) % N]) n++; if (n < minLen) for (let j = 0; j < n; j++) out[(i + j) % N] = 0; }
+  return out;
+}
+RR.driftZones = driftZones;
 // ------------- per-car physics -------------
 function stepCar(race, c, dt) {
   const T = race.T, st = RR.carStats(c);
@@ -1818,7 +1830,12 @@ function aiDrive(race, c, dt) {
   let bend = 0;
   for (let k = 0; k <= span; k += 4) bend = Math.max(bend, Math.abs(wrapA(T.RH[(c.idx + k) % T.N] - T.RH[c.idx])));
   if (cutT) bend = Math.max(cutT[2], c.onCut ? 0 : bend * 0.5);
-  const vmax = st.top - clamp(bend / 1.7, 0, 1) * (st.top - 95) * (330 / Math.max(240, st.grip / RR.AI_DRIFT.grip)) / (c.aiBrave || 1) * RR.AI_DRIFT.brake;   // drift bots carry more speed in and slide
+  // drift only through real corners at speed, and never while already near the edge of the road
+  const AD = RR.AI_DRIFT, lat = Math.hypot(c.x - T.X[c.idx], c.y - T.Y[c.idx]), edge = lat > T.W * 0.5 * AD.edge;
+  const wantSlide = edge || cutT || speed < AD.minSpeed ? 0 : clamp((bend - AD.bendFrom) / AD.bendSpan, 0, 1) * (c.aiDrifter || 1);
+  c.aiSlide = (c.aiSlide || 0) + (Math.min(1, wantSlide) - (c.aiSlide || 0)) * Math.min(1, dt * (wantSlide > (c.aiSlide || 0) ? 4 : 8));
+  const gripK = 1 - (1 - AD.grip) * c.aiSlide;
+  const vmax = (st.top - clamp(bend / 1.7, 0, 1) * (st.top - 95) * (330 / Math.max(240, st.grip / gripK)) / (c.aiBrave || 1) * (1 - (1 - AD.brake) * c.aiSlide)) * (edge ? 0.9 : 1);
   c.throttle = speed < vmax || speed < 35;
   if (Math.abs(diff) > 1.1 && speed > 45) c.throttle = false;
   // stuck recovery (no teleport)
@@ -2889,6 +2906,7 @@ function saveGhost(i, rec, time, carId, k) {
     localStorage.setItem(GHOST_KEY(i), JSON.stringify({ time, carId, k: k || 10, d: btoa(s) }));
   } catch (e) {}
 }
+function ghostBeats(i, t) { const g = loadGhost(i); return !!g && g.time <= t; }   // an existing ghost at least as fast
 function hasGhost(i) { try { return !!localStorage.getItem(GHOST_KEY(i)); } catch (e) { return false; } }
 function loadGhost(i) {
   try {
@@ -3076,6 +3094,24 @@ function notice(msg) { state.notice = msg; A.play('back'); }
 
 
 
+
+// ---------------- your name (Options) ----------------
+function cleanName(s) { s = String(s || '').replace(/[^A-Za-z0-9 _.\-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 12); return s || null; }
+function myName() { return cleanName(save.playerName); }
+function pname(id) { const p = (NET.rosterList || []).find(p => p.id === id) || (NET.roster && NET.roster[id]); return (p && cleanName(p.name)) || 'P' + (id + 1); }
+function textPrompt(titleTxt, info, value, onOk) {
+  RR.Editor.css(); const d = document.createElement('div'); d.id = 'rr-idea';
+  d.style.cssText = 'position:fixed;inset:0;z-index:70;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;font-family:"Trebuchet MS",sans-serif';
+  d.innerHTML = '<div style="background:#2a0606;border:3px solid #ff2c1e;border-radius:14px;padding:14px;width:min(360px,90vw);color:#fff"><h3 style="margin:0 0 6px">' + titleTxt + '</h3><div style="font-size:12px;color:#ffc8b8;margin-bottom:8px">' + info + '</div>' +
+    '<input id="pt" maxlength="12" style="width:100%;box-sizing:border-box;border-radius:8px;padding:7px;font:16px sans-serif"><div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px"><button id="pc" class="rr-b">Cancel</button><button id="po" class="rr-b green">Save</button></div></div>';
+  document.body.appendChild(d); const inp = d.querySelector('#pt'); inp.value = value || ''; inp.focus(); inp.select();
+  const close = () => d.remove(), ok = () => { onOk(inp.value); close(); };
+  d.querySelector('#pc').onclick = close; d.querySelector('#po').onclick = ok; inp.onkeydown = e => { if (e.key === 'Enter') ok(); else if (e.key === 'Escape') close(); e.stopPropagation(); };
+}
+function askName() {
+  textPrompt('Your name', 'Shown in results, leaderboards, Wi-Fi rooms and chat. Letters, numbers, spaces, _ . - (max 12). Leave empty to stay anonymous.', myName() || '',
+    v => { save.playerName = cleanName(v); persist(); toast(myName() ? 'Name set: ' + myName() : 'Name cleared - you are anonymous'); });
+}
 // ---------------- stats, challenges, decals ----------------
 function stats0() { const s = save.stats = save.stats || {}; ['races', 'wins', 'starts', 'boosts', 'ghostWins', 'netRaces'].forEach(k => { if (s[k] == null) s[k] = 0; }); s.customIds = s.customIds || []; return s; }
 function statBump(k, n) { const s = stats0(); s[k] = (s[k] || 0) + (n || 1); persist(); }
@@ -3143,8 +3179,36 @@ function drawChallenges() {
 function lbKeyFor(race) { if (race.camp != null) return 's' + race.camp; if (race.custom && state.custom) return 'c' + state.custom.def.id; return 'r' + race.trackIndex; }
 function lbAdd(key, v, high) {
   if (v == null || !isFinite(v)) return; save.lb = save.lb || {}; const L = save.lb[key] = save.lb[key] || [];
-  const nm = (save.playerName || 'YOU').slice(0, 12); L.push({ v: high ? v : +v.toFixed(3), car: state.carSel[0], n: nm, d: Date.now() });
+  const nm = myName() || 'YOU'; L.push({ v: high ? v : +v.toFixed(3), car: state.carSel[0], n: nm, d: Date.now() });
   L.sort((a, b) => high ? b.v - a.v : a.v - b.v); L.length = Math.min(L.length, 10); persist();
+  if (L[0] && L[0].v === (high ? v : +v.toFixed(3)) && /^[rds]\d+$/.test(key)) lbSubmit(key, L[0].v, high);   // a new best on this device -> the shared board
+}
+// ---- shared leaderboards (everyone): one small public JSON file at jsonblob.com, top 10 per board, one entry per device ----
+RR.LB_URL = RR.LB_URL || '';   // set to a JSON endpoint (GET + PUT) to turn the shared boards on
+const LBG = { data: null, at: 0, status: '' };
+function devId() { if (!save.devId) { save.devId = Math.random().toString(36).slice(2, 10); persist(); } return save.devId; }
+function lbClean(d) {   // only keep well-formed entries
+  const out = {}; const b = d && typeof d.b === 'object' ? d.b : {};
+  for (const k of Object.keys(b)) { if (!/^[rds]\d+$/.test(k) || !Array.isArray(b[k])) continue;
+    out[k] = b[k].filter(e => e && typeof e.v === 'number' && isFinite(e.v) && e.v > 0 && e.v < 1e7).slice(0, 10).map(e => ({ i: String(e.i || '').slice(0, 10), n: cleanName(e.n) || 'Anonymous', v: e.v, c: (e.c | 0) % RR.CARS.length })); }
+  return { b: out };
+}
+function lbFetch(force) {
+  if (!RR.LB_URL) return Promise.resolve(null);
+  if (!force && (LBG.busy || Date.now() - LBG.at < 30000)) return Promise.resolve(LBG.data);
+  LBG.busy = true; LBG.status = LBG.data ? '' : 'Loading the shared board...';
+  return fetch(RR.LB_URL, { headers: { Accept: 'application/json' }, cache: 'no-store' }).then(r => { if (!r.ok) throw 0; return r.json(); })
+    .then(d => { LBG.data = lbClean(d); LBG.at = Date.now(); LBG.status = ''; LBG.busy = false; return LBG.data; })
+    .catch(() => { LBG.busy = false; LBG.at = Date.now(); LBG.status = 'Can\'t reach the shared board right now (offline?). Showing this device.'; return null; });
+}
+function lbSubmit(key, v, high) {
+  if (!RR.LB_URL) return;
+  lbFetch(true).then(d => { if (!d) return;
+    const L = d.b[key] = d.b[key] || [], me = devId(), e = L.find(x => x.i === me), entry = { i: me, n: myName() || 'Anonymous', v, c: state.carSel[0] };
+    if (e) { if (high ? v <= e.v : v >= e.v) { if (e.n === entry.n) return; e.n = entry.n; } else Object.assign(e, entry); } else L.push(entry);
+    L.sort((a, b) => high ? b.v - a.v : a.v - b.v); L.length = Math.min(L.length, 10);
+    return fetch(RR.LB_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(d) }).then(r => { if (r.ok) { LBG.data = d; LBG.at = Date.now(); } });
+  }).catch(() => {});
 }
 function lbList() {   // every board, in order
   const out = []; for (let i = 0; i < 18; i++) out.push({ key: 'r' + i, name: 'Race ' + (i + 1), cat: 'Races' });
@@ -3156,12 +3220,15 @@ function lbList() {   // every board, in order
 function boardButtons() {
   const L = lbList(), go2 = d => { state.lbSel = ((state.lbSel || 0) + d + L.length) % L.length; }, jump = cat => { const i = L.findIndex(b => b.cat === cat); if (i >= 0) state.lbSel = i; else notice('No ' + cat + ' yet.'); };
   return [B(8, 246, 64, 20, 'Back', () => go('menu')), B(150, 238, 80, 26, '< Prev', () => go2(-1), { blue: 1 }), B(250, 238, 80, 26, 'Next >', () => go2(1), { blue: 1 }),
-    B(70, 40, 80, 20, 'Races', () => jump('Races')), B(156, 40, 80, 20, 'Drift Trials', () => jump('Drift Trials')), B(242, 40, 80, 20, 'Story', () => jump('Story')), B(328, 40, 80, 20, 'My Tracks', () => jump('My Tracks'))];
+    B(70, 40, 80, 20, 'Races', () => jump('Races')), B(156, 40, 80, 20, 'Drift Trials', () => jump('Drift Trials')), B(242, 40, 80, 20, 'Story', () => jump('Story')), B(328, 40, 80, 20, 'My Tracks', () => jump('My Tracks')),
+    ...(!RR.LB_URL ? [] : [B(352, 238, 116, 26, state.lbScope === 'me' ? 'Showing: This device' : 'Showing: Everyone', () => { state.lbScope = state.lbScope === 'me' ? 'all' : 'me'; if (state.lbScope === 'all') lbFetch(true); })])];
 }
 function drawBoards() {
   menuBG(); ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(10,0,0,0.55)'; ctx.fillRect(0, 0, VW, VH);
   title('Leaderboards', RR.MOBILE ? 24 : 18); ctx.setTransform(S, 0, 0, S, 0, 0);
-  const all = lbList(), b = all[(state.lbSel || 0) % all.length], L = ((save.lb || {})[b.key]) || [], M = RR.MOBILE;
+  const all = lbList(), b = all[(state.lbSel || 0) % all.length], M = RR.MOBILE, shared = !!RR.LB_URL && state.lbScope !== 'me' && /^[rds]\d+$/.test(b.key);
+  if (shared) lbFetch();
+  const L = shared && LBG.data ? (LBG.data.b[b.key] || []).map(e => ({ n: e.n, v: e.v, car: e.c, mine: e.i === save.devId })) : ((save.lb || {})[b.key]) || [];
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 14px "Trebuchet MS",sans-serif';
   ctx.fillText(b.cat + ':  ' + b.name, VW / 2, M ? 104 : 74);
   const x0 = M ? 20 : 110, x1 = M ? 250 : 370, y0 = M ? 124 : 88;
@@ -3169,23 +3236,24 @@ function drawBoards() {
   L.forEach((e, i) => {
     const y = y0 + i * (M ? 26 : 14.5); ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.10)'; ctx.fillRect(x0, y - 6.5, x1 - x0, 13);
     ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = i === 0 ? '#ffcf40' : i === 1 ? '#e0e8f0' : i === 2 ? '#e8a060' : '#fff';
-    ctx.fillText((i + 1) + '.', x0 + 4, y); ctx.fillText(e.n, x0 + 22, y);
+    if (e.mine) { ctx.fillStyle = 'rgba(255,207,64,0.18)'; ctx.fillRect(x0, y - 6.5, x1 - x0, 13); ctx.fillStyle = '#ffcf40'; }
+    ctx.fillText((i + 1) + '.', x0 + 4, y); ctx.fillText(e.n + (e.mine ? ' (you)' : ''), x0 + 22, y);
     ctx.fillStyle = '#ffd0c0'; ctx.font = '8px "Trebuchet MS",sans-serif'; ctx.fillText((RR.CARS[e.car] || RR.CARS[0]).name, x0 + (M ? 90 : 110), y);
     ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.fillText(b.high ? String(e.v) : fmtTime(e.v), x1 - 4, y);
   });
   ctx.fillStyle = 'rgba(255,208,192,0.7)'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('Board ' + ((state.lbSel || 0) % all.length + 1) + ' of ' + all.length + '  -  top 10 runs on this device', VW / 2, M ? 408 : 230);
+  ctx.fillText('Board ' + ((state.lbSel || 0) % all.length + 1) + ' of ' + all.length + '  -  ' + (shared ? (LBG.status || 'top 10 players everywhere (one entry each)') : 'top 10 runs on this device'), VW / 2, M ? 408 : 230);
   ctx.restore(); drawButtons();
 }
 // ---------------- News: what's new + an ideas / questions box (posts go to a public relay the developer reads) ----------------
 const IDEAS_TOPIC = 'retroracing-ideas-ss26';
-const NEWS = ['v1.6: Drift Trials, 9 new terrains (one per Story rival), Challenges + car decals,', 'reverse (S / Down), smarter bots that drift, leaderboards, ghosts on your own tracks,', 'shorter track codes, and this ideas box. Thanks for playing!'];
+const NEWS = ['v1.6.1: Drift Trials now race 5 bots with x2 DRIFT ZONES and new tracks, set your name in Options,', 'post here as yourself or Anonymous, cleaner bot drifting, easier late races, ghost fix.', 'v1.6: Drift Trials, 9 terrains, Challenges + decals, reverse, leaderboards, custom-track ghosts.'];
 function newsButtons() { return [B(8, 246, 64, 20, 'Back', () => go('menu')), B(150, 236, 180, 28, 'Ask or suggest', () => openIdeaBox(), { big: 1, blue: 1 })]; }
 function loadIdeas(force) {
   if (state.ideas && !force && Date.now() - state.ideas.at < 60000) return; state.ideas = { at: Date.now(), list: (state.ideas && state.ideas.list) || [], status: 'Loading...' };
   try { fetch(RR.RELAY + IDEAS_TOPIC + '/json?poll=1&since=24h').then(r => r.text()).then(t => {
     const list = t.split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(m => m && m.event === 'message' && m.message)
-      .map(m => ({ t: m.time * 1000, kind: m.title === 'Question' ? 'Q' : 'Idea', text: String(m.message).slice(0, 200) })).reverse().slice(0, 12);
+      .map(m => { const tt = String(m.title || ''), sp = tt.indexOf(' - '); return { t: m.time * 1000, kind: /^Question/.test(tt) ? 'Q' : 'Idea', who: (sp > 0 && cleanName(tt.slice(sp + 3))) || 'Anonymous', text: String(m.message).slice(0, 200) }; }).reverse().slice(0, 12);
     state.ideas.list = list; state.ideas.status = list.length ? '' : 'No posts in the last day - be the first!'; }).catch(() => { state.ideas.status = 'Offline - can\'t load posts right now.'; }); } catch (e) { state.ideas.status = 'Offline'; }
 }
 function openIdeaBox() {
@@ -3193,7 +3261,7 @@ function openIdeaBox() {
   d.style.cssText = 'position:fixed;inset:0;z-index:70;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;font-family:"Trebuchet MS",sans-serif';
   d.innerHTML = '<div style="background:#2a0606;border:3px solid #ff2c1e;border-radius:14px;padding:14px;width:min(440px,92vw);color:#fff"><h3 style="margin:0 0 6px">Ask or suggest something</h3>' +
     '<div style="font-size:12px;color:#ffc8b8;margin-bottom:8px">Your post is sent to the developer and shows on this News page for everyone for about a day. Don\'t include personal info.</div>' +
-    '<div style="display:flex;gap:6px;margin-bottom:6px"><label><input type="radio" name="k" value="Idea" checked> Idea</label><label><input type="radio" name="k" value="Question"> Question</label></div>' +
+    '<div style="display:flex;gap:10px;margin-bottom:6px;flex-wrap:wrap"><label><input type="radio" name="k" value="Idea" checked> Idea</label><label><input type="radio" name="k" value="Question"> Question</label><span style="flex:1"></span><label title="Set your name in Options"><input type="checkbox" id="an"' + (myName() ? '' : ' checked disabled') + '> Post as Anonymous' + (myName() ? ' (instead of ' + myName() + ')' : ' (set a name in Options)') + '</label></div>' +
     '<textarea id="it" maxlength="200" style="width:100%;height:80px;box-sizing:border-box;border-radius:8px;padding:6px;font:14px sans-serif" placeholder="e.g. Add a rain mode!"></textarea>' +
     '<div id="is" style="min-height:16px;color:#ffcf40;font-size:12px;margin:4px 0"></div><div style="display:flex;gap:6px;justify-content:flex-end"><button id="ic" class="rr-b">Cancel</button><button id="ib" class="rr-b green">Send</button></div></div>';
   document.body.appendChild(d); const ta = d.querySelector('#it'); ta.focus(); state.typing = true;
@@ -3202,8 +3270,8 @@ function openIdeaBox() {
   d.querySelector('#ib').onclick = () => {
     const text = ta.value.trim(); if (text.length < 3) { d.querySelector('#is').textContent = 'Type a little more first.'; return; }
     if (Date.now() - (save.lastIdea || 0) < 30000) { d.querySelector('#is').textContent = 'Please wait a moment before sending another.'; return; }
-    const kind = d.querySelector('input[name=k]:checked').value; d.querySelector('#is').textContent = 'Sending...';
-    fetch(RR.RELAY + IDEAS_TOPIC, { method: 'POST', body: text.slice(0, 200), headers: { Title: kind, Tags: 'racing_car' } }).then(r => { if (!r.ok) throw 0;
+    const kind = d.querySelector('input[name=k]:checked').value, who = d.querySelector('#an').checked ? 'Anonymous' : (myName() || 'Anonymous'); d.querySelector('#is').textContent = 'Sending...';
+    fetch(RR.RELAY + IDEAS_TOPIC, { method: 'POST', body: text.slice(0, 200), headers: { Title: kind + ' - ' + who, Tags: 'racing_car' } }).then(r => { if (!r.ok) throw 0;
       save.lastIdea = Date.now(); persist(); close(); toast('Thanks! Your ' + kind.toLowerCase() + ' was sent.'); loadIdeas(true); }).catch(() => { d.querySelector('#is').textContent = 'Could not send - check your internet and try again.'; });
   };
 }
@@ -3217,8 +3285,8 @@ function drawNews() {
   const I = state.ideas || { list: [], status: '' };
   if (I.status) { ctx.fillStyle = '#ffd0c0'; ctx.font = '8px "Trebuchet MS",sans-serif'; ctx.fillText(I.status, x0, y); }
   for (const p of I.list) { if (y > (M ? 420 : 226)) break;
-    ctx.fillStyle = p.kind === 'Q' ? '#9fe9ff' : '#9cff8a'; ctx.font = 'bold 8px "Trebuchet MS",sans-serif'; ctx.fillText(p.kind === 'Q' ? 'Q:' : 'Idea:', x0, y);
-    ctx.fillStyle = '#fff'; ctx.font = '8px "Trebuchet MS",sans-serif'; const ls = wrapLines(p.text, w - 30, 8).slice(0, 2); ls.forEach((l, k) => ctx.fillText(l, x0 + 28, y + k * 10)); y += ls.length * 10 + 3; }
+    ctx.fillStyle = p.kind === 'Q' ? '#9fe9ff' : '#9cff8a'; ctx.font = 'bold 8px "Trebuchet MS",sans-serif'; ctx.fillText((p.kind === 'Q' ? 'Q' : 'Idea') + ' - ' + p.who, x0, y); y += 10;
+    ctx.fillStyle = '#fff'; ctx.font = '8px "Trebuchet MS",sans-serif'; const ls = wrapLines(p.text, w - 12, 8).slice(0, 2); ls.forEach((l, k) => ctx.fillText(l, x0 + 10, y + k * 10)); y += ls.length * 10 + 3; }
   ctx.restore(); drawButtons();
 }
 function wrapLines(text, w, px) { ctx.font = px + 'px "Trebuchet MS",sans-serif'; const out = []; let line = ''; for (const word of String(text).split(/\s+/)) { const t = line ? line + ' ' + word : word; if (ctx.measureText(t).width > w && line) { out.push(line); line = word; } else line = t; } if (line) out.push(line); return out; }
@@ -3229,7 +3297,7 @@ function driftTargets(k) {   // star scores from the level's length (2 laps at d
   const L = RR.DRIFT_LEVELS[k], sh = RR.trackShape(Object.assign({ cuts: [] }, L)); let len = 0;
   const c = sh ? sh.cham : []; for (let i = 0; i < c.length; i++) { const p = c[i], q = c[(i + 1) % c.length]; len += Math.hypot(p[0] - q[0], p[1] - q[1]); }
   const secs = len * (L.laps || 2) / 150, r50 = v => Math.round(v / 50) * 50;
-  return [r50(secs * 12), r50(secs * 30), r50(secs * 52)];
+  return [r50(secs * 10), r50(secs * 26), r50(secs * 48)];
 }
 function driftStars(k, score) { const t = driftTargets(k); return score >= t[2] ? 3 : score >= t[1] ? 2 : score >= t[0] ? 1 : 0; }
 function driftUnlocked() { const D = driftSave(); let n = 0; while (n < RR.DRIFT_LEVELS.length - 1 && (D[n] || 0) > 0 && driftStars(n, D[n]) > 0) n++; return n; }
@@ -3242,24 +3310,40 @@ function driftButtons() {
 }
 function startDrift() {
   const k = state.driftK, L = RR.DRIFT_LEVELS[k];
-  const def = { name: L.name, w: L.w, pts: L.pts, cuts: [], theme: L.theme, time: L.time, laps: L.laps || 2, bots: 0, trees: 60, umb: 2, seed: 300 + k * 11 };
+  const def = { name: L.name, w: L.w, pts: L.pts, cuts: [], theme: L.theme, time: L.time, laps: L.laps || 2, bots: RR.DRIFT_SCORE.bots, diff: L.diff || 'normal', trees: 60, umb: 2, seed: 300 + k * 11 };
   state.track = -1; state.paused = false; state.pauseOpts = false; clearInput(); state.custom = null; state.twoPlayer = false;
   save.lastCar = state.carSel[0]; persist();
   state.race = RR.createRace({ trackIndex: 0, trackDef: def, players: [{ carId: state.carSel[0] }], drift: true });
   state.race.driftK = k;
-  state.cams = [{ car: state.race.cars[0] }]; state.cams[0].x = state.cams[0].car.x; state.cams[0].y = state.cams[0].car.y;
+  state.cams = [{ car: state.race.cars.find(c => c.player === 0) }];   // follow YOUR car (bots line up first on the grid) state.cams[0].x = state.cams[0].car.x; state.cams[0].y = state.cams[0].car.y;
   state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null;
   A.setMusic('game'); A.setEngines(1);
 }
 function finishDrift(race) {
   const me = race.cars.find(c => c.player === 0), k = race.driftK, D = driftSave();
   RR.bankDrift(race, me);
-  const score = race.drift.score, stars = driftStars(k, score), before = driftUnlocked();
-  const res = { mode: 'drift', k, score, stars, best: D[k] || 0, bestChain: race.drift.bestChain, crashes: race.drift.crashes, time: me.finishTime, targets: driftTargets(k) };
+  const pos = RR.positionOf(race, me), raw = race.drift.score, bonus = RR.DRIFT_SCORE.placeBonus[pos - 1] || 1, score = Math.round(raw * bonus);
+  const stars = driftStars(k, score), before = driftUnlocked();
+  statBump('races'); if (pos === 1) statBump('wins');
+  const res = { mode: 'drift', k, score, raw, pos, bonus, stars, best: D[k] || 0, bestChain: race.drift.bestChain, crashes: race.drift.crashes, time: me.finishTime, targets: driftTargets(k) };
   if (score > (D[k] || 0)) { D[k] = score; res.newBest = true; }
   res.unlockedNext = driftUnlocked() > before;
   lbAdd('d' + k, score, true); persist(); checkChallenges();
   state.result = res; A.stopEngines(); A.play('finish'); go('results'); state.focus = buttons().length - 1;
+}
+function drawDriftZones(race, inView) {   // glowing pink / cyan kerb dashes along both road edges through each zone
+  const T = race.T, Z = race.driftZone, hw = T.W / 2 - 4, t = performance.now() / 400;
+  ctx.save(); ctx.lineCap = 'round';
+  for (let i = 0; i < T.N; i += 3) {
+    if (!Z[i] || !inView(T.X[i], T.Y[i], 80)) continue;
+    const h = T.H[i], nx = Math.cos(h), ny = Math.sin(h), dx = Math.sin(h) * 5, dy = -Math.cos(h) * 5, on = ((i / 3) | 0) % 2;
+    for (const sd of [-1, 1]) { const px = T.X[i] + nx * hw * sd, py = T.Y[i] + ny * hw * sd;
+      ctx.strokeStyle = on ? 'rgba(255,90,210,0.85)' : 'rgba(80,230,255,0.85)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px - dx, py - dy); ctx.lineTo(px + dx, py + dy); ctx.stroke(); }
+    if (!Z[(i - 3 + T.N) % T.N]) {   // zone start: a label across the road
+      ctx.save(); ctx.translate(T.X[i], T.Y[i]); ctx.rotate(h + Math.PI); ctx.globalAlpha = 0.55 + 0.25 * Math.sin(t * 3);
+      ctx.fillStyle = '#ff5ad2'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('DRIFT ZONE', 0, 0); ctx.restore(); }
+  }
+  ctx.restore();
 }
 function drawDriftScore(race, vw, vh) {
   const D = race.drift, small = vw < 300;
@@ -3271,6 +3355,7 @@ function drawDriftScore(race, vw, vh) {
     ctx.save(); ctx.translate(vw / 2, small ? 48 : 52); ctx.scale(pulse, pulse);
     ctx.font = 'bold 15px "Trebuchet MS",sans-serif'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)';
     const t = '+' + Math.round(D.chain) + (D.mult > 1 ? '  x' + D.mult : ''); ctx.strokeText(t, 0, 0); ctx.fillStyle = col; ctx.fillText(t, 0, 0);
+    if (D.inZone) { ctx.font = 'bold 8px "Trebuchet MS",sans-serif'; ctx.fillStyle = '#ff7ad8'; ctx.strokeText('DRIFT ZONE x2', 0, -13); ctx.fillText('DRIFT ZONE x2', 0, -13); }
     const gw = 60; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(-gw / 2, 10, gw, 3); ctx.fillStyle = col; ctx.fillRect(-gw / 2, 10, gw * Math.max(0, D.grace / RR.DRIFT_SCORE.grace), 3);
     ctx.restore();
   }
@@ -3282,7 +3367,7 @@ function drawDrift() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ff7ad8'; ctx.font = 'bold 22px "Trebuchet MS","Segoe UI",sans-serif';
   ctx.fillText('DRIFT TRIALS', VW / 2, RR.MOBILE ? 30 : 22);
   ctx.fillStyle = '#d8c8ff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif';
-  ctx.fillText(RR.MOBILE ? 'Slide to score. Chain drifts for up to x5!' : 'Slide to score points. Keep drifting (short breaks are OK) to build a x5 multiplier. Walls end the combo.', VW / 2, RR.MOBILE ? 50 : 38);
+  ctx.fillText(RR.MOBILE ? 'Race 5 bots. Drift to score, zones x2!' : 'Race 5 bots and drift to score. Chain drifts for up to x5, DRIFT ZONES score x2, finishing 1st-3rd adds a bonus.', VW / 2, RR.MOBILE ? 50 : 38);
   const D = driftSave(), un = driftUnlocked(), list = buttons();
   list.forEach((b, i) => {
     if (b.drift == null) { drawButton(b, i === state.focus); return; }
@@ -3315,9 +3400,10 @@ function drawDriftResults(r) {
   ctx.fillStyle = '#d8c8ff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.fillText('Drift Trial ' + (r.k + 1) + ' — ' + L.name, cx, M ? 80 : 22);
   ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 34px "Trebuchet MS",sans-serif'; ctx.fillText(String(r.score), cx, M ? 130 : 58);
   ctx.font = 'bold 26px "Trebuchet MS",sans-serif'; ctx.fillText('★'.repeat(r.stars) + '☆'.repeat(3 - r.stars), cx, M ? 172 : 92);
+  ctx.fillStyle = '#9fe9ff'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; ctx.fillText('Finished ' + r.pos + ordinal(r.pos) + ' of ' + (RR.DRIFT_SCORE.bots + 1) + '  -  drift ' + r.raw + (r.bonus > 1 ? '  x' + r.bonus + ' place bonus' : ''), cx, M ? 196 : 108);
   ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; ctx.fillStyle = '#fff';
-  const lines = ['Stars at  ' + r.targets.join('  /  '), 'Best combo  ' + r.bestChain + '      Crashes  ' + r.crashes, (r.newBest ? 'NEW BEST SCORE!' : 'Best  ' + r.best) + (r.unlockedNext ? '      Next level unlocked!' : '')];
-  lines.forEach((t, i) => { ctx.fillStyle = i === 2 && (r.newBest || r.unlockedNext) ? '#7cff6a' : '#fff'; ctx.fillText(t, cx, (M ? 210 : 122) + i * 16); });
+  const lines = ['Stars at  ' + r.targets.join('  /  ') + '   (1st x1.5, 2nd x1.3, 3rd x1.15)', 'Best combo  ' + r.bestChain + '      Crashes  ' + r.crashes, (r.newBest ? 'NEW BEST SCORE!' : 'Best  ' + r.best) + (r.unlockedNext ? '      Next level unlocked!' : '')];
+  lines.forEach((t, i) => { ctx.fillStyle = i === 2 && (r.newBest || r.unlockedNext) ? '#7cff6a' : '#fff'; ctx.fillText(t, cx, (M ? 222 : 130) + i * 16); });
   drawButtons();
 }
 // ---------------- buttons per screen ----------------
@@ -3334,6 +3420,7 @@ function optionsButtons(back) {
       B(150, 194, 180, 20, RR.MOBILE ? 'Reset Progress' : 'PC: Reset Progress', () => askConfirm('Reset ALL progress?\nUnlocked races, stars, best times and\nunlocked cars will be lost. This cannot be undone.', 'Yes, reset', () => { const s = save; save = defSave(); save.sfxVol = s.sfxVol; save.musicVol = s.musicVol; save.voice = s.voice; persist(); notice('Progress reset.'); })),
       B(170, 218, 140, 20, 'Controls & Credits', () => { state.info = true; }, { blue: 1 }),
       B(190, 243, 100, 22, 'Back', back),
+      B(20, 46, 120, 24, 'Name: ' + (myName() || 'not set'), () => askName(), { blue: 1 }),
   ];
 }
 function askConfirm(text, yesLabel, yes, noLabel, no) { state.confirm = { text, yesLabel, yes, noLabel, no }; state.focus = 0; A.play('back'); }
@@ -3370,7 +3457,7 @@ function buttonsLandscape() {
       B(380, 6, 92, 20, 'Challenges', () => go('challenges')),
       B(8, 244, 60, 20, 'News', () => go('news')),
       B(392, 244, 80, 20, 'Options', () => go('options')),
-      B(360, 244, 28, 20, '', () => notice('Language: English is the only\nlanguage available in this recreation.'), { flag: 1 }),
+      B(352, 244, 36, 20, '', () => notice('Language: English is the only\nlanguage available in this recreation.'), { flag: 1 }),
     ];
     case 'options': return optionsButtons(() => go('menu'));
     case 'camp': return campButtons();
@@ -3411,7 +3498,7 @@ function buttonsLandscape() {
     case 'netwait': return [B(190, 232, 100, 28, 'Leave', () => netLeave())];
     case 'results': {
       const R = state.result;
-      if (R && R.drift) { const k = state.driftK, out = [B(16, 226, 74, 34, 'Levels', () => { state.race = null; go('drift'); state.focus = k; }, { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startDrift(), { blue: 1 })];
+      if (R && R.mode === 'drift') { const k = state.driftK, out = [B(16, 226, 74, 34, 'Levels', () => { state.race = null; go('drift'); state.focus = k; }, { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startDrift(), { blue: 1 })];
         if (k + 1 < RR.DRIFT_LEVELS.length && k + 1 <= driftUnlocked()) out.push(B(320, 222, 144, 40, 'Next', () => { state.driftK = k + 1; startDrift(); }, { big: 1, blue: 1 })); return out; }
       if (R && R.mode === 'ghost' && R.custom) return [B(16, 226, 74, 34, 'Back', () => backToCustom(), { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startCustom(), { blue: 1 }), B(320, 222, 144, 40, 'Race Bots', () => { state.custom.ghost = false; startCustom(); }, { big: 1, blue: 1 })];
       if (R && R.mode === 'ghost') return [B(16, 226, 74, 34, 'Back', () => { state.race = null; go('trackselect'); }, { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startGhostRace(state.track), { blue: 1 }),
@@ -3434,8 +3521,8 @@ function buttonsLandscape() {
 }
 // Phone (portrait 270x480) positions, by screen, in the same order as the landscape lists.
 const PORTRAIT = {
-  menu: [[14, 230, 116, 38], [140, 230, 116, 38], [14, 280, 116, 38], [140, 280, 116, 38], [14, 330, 116, 38], [140, 330, 116, 38], [4, 4, 92, 20], [174, 4, 92, 20], [4, 454, 56, 22], [186, 454, 80, 22], [152, 454, 30, 22]],
-  options: [[45, 56, 180, 28], [45, 88, 180, 28], [45, 120, 180, 28], [45, 152, 180, 28], [45, 184, 180, 28], [45, 222, 180, 26], [45, 254, 180, 26], [65, 292, 140, 28], [85, 430, 100, 32]],
+  menu: [[14, 230, 116, 38], [140, 230, 116, 38], [14, 280, 116, 38], [140, 280, 116, 38], [14, 330, 116, 38], [140, 330, 116, 38], [4, 4, 92, 20], [174, 4, 92, 20], [4, 454, 56, 22], [186, 454, 80, 22], [142, 454, 40, 22]],
+  options: [[45, 56, 180, 28], [45, 88, 180, 28], [45, 120, 180, 28], [45, 152, 180, 28], [45, 184, 180, 28], [45, 222, 180, 26], [45, 254, 180, 26], [65, 292, 140, 28], [85, 430, 100, 32], [65, 330, 140, 28]],
   carselect: [[33, 262, 60, 44], [105, 262, 60, 44], [177, 262, 60, 44], [33, 322, 60, 44], [105, 322, 60, 44], [177, 322, 60, 44], [10, 424, 80, 40], [130, 418, 130, 48]],
   race: [[65, 146, 140, 34], [65, 188, 140, 34], [65, 230, 140, 34], [65, 272, 140, 34], [35, 326, 200, 32]],
   results: [[8, 424, 76, 40], [92, 424, 76, 40], [176, 418, 86, 48], [8, 372, 160, 40]],
@@ -3455,7 +3542,7 @@ function relayout(list) {
   }
   if (sc === 'camp') return campLayoutPhone(list);
   if (sc === 'challenges') { list[0] && Object.assign(list[0], { x: 85, y: 440, w: 100, h: 30 }); return list; }
-  if (sc === 'boards') { const P2 = [[10, 420, 70, 32], [100, 420, 70, 32], [190, 420, 70, 32], [8, 60, 60, 24], [72, 60, 62, 24], [138, 60, 60, 24], [202, 60, 60, 24]]; list.forEach((b, i) => P2[i] && Object.assign(b, { x: P2[i][0], y: P2[i][1], w: P2[i][2], h: P2[i][3] })); return list; }
+  if (sc === 'boards') { const P2 = [[10, 420, 70, 32], [100, 420, 70, 32], [190, 420, 70, 32], [8, 60, 60, 24], [72, 60, 62, 24], [138, 60, 60, 24], [202, 60, 60, 24], [60, 372, 150, 26]]; list.forEach((b, i) => P2[i] && Object.assign(b, { x: P2[i][0], y: P2[i][1], w: P2[i][2], h: P2[i][3] })); return list; }
   if (sc === 'news') { const P2 = [[10, 440, 80, 30], [100, 440, 160, 30]]; list.forEach((b, i) => P2[i] && Object.assign(b, { x: P2[i][0], y: P2[i][1], w: P2[i][2], h: P2[i][3] })); return list; }
   if (sc === 'drift') { list.forEach((b, i) => { if (i < RR.DRIFT_LEVELS.length) Object.assign(b, { x: 14 + (i % 2) * 124, y: 70 + ((i / 2) | 0) * 68, w: 118, h: 62 }); else Object.assign(b, { x: 85, y: 432, w: 100, h: 32 }); }); return list; }
   const P = PORTRAIT[sc]; if (!P) return list;
@@ -3479,7 +3566,7 @@ function pickCar() {
   if (state.campK != null && !state.net) { const k = state.campK; playCut(RR.CampScripts.vs(k, state.carSel[0]), () => startCampRace()); return; }
   if (state.driftK != null && !state.net) { startDrift(); return; }
   if (state.custom && !state.net) { save.lastCar = state.carSel[0]; persist(); startCustom(); return; }
-  if (state.net) { if (NET.role === 'host') { NET.roster[0] = { car: state.carSel[0], decal: myDecal() }; netBroadcastRoster(); go('trackselect'); state.focus = state.track || 0; } else { netEvent({ type: 'car', car: state.carSel[0], decal: myDecal() }); state.screen = 'netwait'; state.focus = 0; } return; }
+  if (state.net) { if (NET.role === 'host') { NET.roster[0] = { car: state.carSel[0], decal: myDecal(), name: myName() }; netBroadcastRoster(); go('trackselect'); state.focus = state.track || 0; } else { netEvent({ type: 'car', car: state.carSel[0], decal: myDecal(), name: myName() }); state.screen = 'netwait'; state.focus = 0; } return; }
   state.track = state.twoPlayer ? state.track : Math.min(save.unlocked, 17);
   go('trackselect'); state.focus = state.twoPlayer ? state.track : Math.min(save.unlocked, 17);
 }
@@ -3631,7 +3718,7 @@ function startCustom(seed) {
   const C = state.custom, pd = RR.Editor.playDef(C.def); if (C.test) pd.bots = 0;
   state.track = -1; state.paused = false; state.pauseOpts = false; clearInput();
   if (C.ghost) {   // race your own ghost on your track
-    const gh = loadGhost('c_' + C.def.id); if (!gh) { C.ghost = false; notice('No ghost on this track yet.\nFinish a race on it once to record one.'); go('carselect'); return; }
+    const gh = loadGhost('c_' + C.def.id); if (!gh) { C.ghost = false; startCustom(seed); toast('No ghost on this track yet - finish this race to record one'); return; }
     pd.bots = 0; state.twoPlayer = false;
     state.race = RR.createRace({ trackIndex: 0, trackDef: pd, players: [{ carId: state.carSel[0] }], mode: 'ghost', ghost: gh });
     state.cams = [{ car: state.race.cars[0], x: state.race.cars[0].x, y: state.race.cars[0].y }];
@@ -3723,7 +3810,7 @@ function netLinkUp(link) {
     link.id = NET.nextId++; NET.peers.push(link);
     netSend(link.ev, { type: 'welcome', you: link.id, max: NET.max });
     NET.roster[link.id] = { car: null };
-    netBroadcastRoster(); addChat(-1, 'P' + (link.id + 1) + ' joined');
+    netBroadcastRoster(); addChat(-1, pname(link.id) + ' joined');
     if (!state.net) { NET.ok = true; state.net = true; }
     netOverlayRefresh();
   } else {
@@ -3734,14 +3821,14 @@ function netLinkDown(link) {
   link.open = false;
   if (NET.role === 'host') {
     NET.peers = NET.peers.filter(p => p !== link);
-    if (link.id != null) { delete NET.roster[link.id]; netBroadcastRoster(); addChat(-1, 'P' + (link.id + 1) + ' left'); netEvent({ type: 'left', who: link.id }); }
+    if (link.id != null) { const nm = pname(link.id); delete NET.roster[link.id]; netBroadcastRoster(); addChat(-1, nm + ' left'); netEvent({ type: 'left', who: link.id }); }
     netMarkLeft(link.id);
     netOverlayRefresh();
   } else if (state.net || NET.ok) netLost('The host left or the connection was lost.');
 }
 function netBroadcastRoster() {
   NET.roster[0] = NET.roster[0] || { car: null };
-  const players = Object.keys(NET.roster).map(Number).sort((a, b) => a - b).map(id => ({ id, car: NET.roster[id].car, decal: NET.roster[id].decal || null }));
+  const players = Object.keys(NET.roster).map(Number).sort((a, b) => a - b).map(id => ({ id, car: NET.roster[id].car, decal: NET.roster[id].decal || null, name: NET.roster[id].name || null }));
   const s = JSON.stringify({ type: 'roster', players, max: NET.max, id: 0 }); NET.peers.forEach(p => netSend(p.ev, s));
   NET.rosterList = players;
 }
@@ -3749,7 +3836,7 @@ function netIncoming(link, m) {
   if (NET.role === 'host') {   // tag with the sender, use it, and pass it on to everyone else
     if (m.type === 'welcome' || m.type === 'roster' || m.type === 'start') return;
     m.id = link.id;
-    if (m.type === 'car') { NET.roster[link.id] = { car: m.car, decal: typeof m.decal === 'string' && RR.DECALS[m.decal] ? m.decal : null }; netBroadcastRoster(); }
+    if (m.type === 'car') { NET.roster[link.id] = { car: m.car, decal: typeof m.decal === 'string' && RR.DECALS[m.decal] ? m.decal : null, name: cleanName(m.name) }; netBroadcastRoster(); }
     const s = JSON.stringify(m);
     NET.peers.forEach(p => { if (p !== link) netSend(m.type === 's' ? p.st : p.ev, s); });
   }
@@ -3766,7 +3853,7 @@ function netApply(m) {
   else if (m.type === 'fin') { const c = puppet(m.id); if (c) c.netFin = m.t; if (state.result && state.result.mode === 'net') state.result.times[m.id] = m.t; }
   else if (m.type === 'chat') addChat(m.id, m.text);
   else if (m.type === 'back') { if (state.screen === 'results' || state.screen === 'race') { state.race = null; state.screen = 'netwait'; state.focus = 0; } }
-  else if (m.type === 'left') { netMarkLeft(m.who); addChat(-1, 'P' + (m.who + 1) + ' left'); }
+  else if (m.type === 'left') { netMarkLeft(m.who); addChat(-1, pname(m.who) + ' left'); }
   else if (m.type === 'bye' && NET.role !== 'host') netLost('The host closed the room.');
 }
 function netMarkLeft(id) {
@@ -3812,10 +3899,10 @@ function startNetRace(m) {
 function netPickRace(i, def) {   // host picked a race (or one of their own tracks)
   const players = netPlayers();
   if (players.length < 2) { notice('Nobody has joined your room yet.\nRoom code: ' + (NET.room || '-')); return; }
-  const missing = players.filter(p => p.car == null).map(p => 'P' + (p.id + 1));
+  const missing = players.filter(p => p.car == null).map(p => pname(p.id));
   if (missing.length) { notice('Waiting for ' + missing.join(', ') + ' to pick a car...'); return; }
   if (NET.es) { NET.es.close(); NET.es = null; }   // room closes to new players once racing
-  const m = { type: 'start', track: i, seed: (Math.random() * 0xffffff) | 0, players: players.map(p => ({ id: p.id, car: p.car, decal: p.decal || null })), bots: [] };
+  const m = { type: 'start', track: i, seed: (Math.random() * 0xffffff) | 0, players: players.map(p => ({ id: p.id, car: p.car, decal: p.decal || null, name: p.name || null })), bots: [] };
   if (NET.fillBots) {   // bots take the empty spots in the room
     const taken = new Set(players.map(p => p.id)), usedCars = new Set(players.map(p => p.car)), freeCars = RR.CARS.filter(c => c.camp == null).map(c => c.id).filter(id => !usedCars.has(id));
     for (let slot = 0, k = 0; slot < 8 && players.length + m.bots.length < NET.max; slot++) {
@@ -3918,7 +4005,7 @@ function chatPanel(show, small) {
 function chatPanelRefresh() {
   const l = document.getElementById('rr-log'); if (!l) return;
   l.innerHTML = NET.chat.slice(-4).map(c => c.id < 0 ? '<div style="color:#9fb3ff;font-style:italic">' + escHtml(c.text) + '</div>'
-    : '<div><b style="color:' + (c.id === NET.myId ? '#ffcf40' : '#9fe9ff') + '">' + (c.id === NET.myId ? 'You' : 'P' + (c.id + 1)) + ':</b> ' + escHtml(c.text) + '</div>').join('') || '<div style="color:#9fb3ff">' + (RR.MOBILE ? 'Quick chat - tap Send' : 'Chat: T to type, Q / E quick chats') + '</div>';
+    : '<div><b style="color:' + (c.id === NET.myId ? '#ffcf40' : '#9fe9ff') + '">' + (c.id === NET.myId ? (myName() || 'You') : pname(c.id)) + ':</b> ' + escHtml(c.text) + '</div>').join('') || '<div style="color:#9fb3ff">' + (RR.MOBILE ? 'Quick chat - tap Send' : 'Chat: T to type, Q / E quick chats') + '</div>';
 }
 function escHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 // ---- pairing screen ----
@@ -3958,7 +4045,7 @@ function netOverlay() {
     const draw = () => {
       const ps = netPlayers();
       set('<h2 style="margin:0 0 6px">Your room</h2>' + (NET.room ? 'Tell everyone this code:' : 'Connected with offline codes:').replace(/^/, '<p style="margin:0;color:#bcd0ff">') + '</p><div style="font:bold 40px monospace;letter-spacing:6px;color:#ffcf40;margin:4px 0 10px">' + (NET.room || 'OFFLINE') + '</div>' +
-        '<p style="margin:0 0 6px">Players: <b>' + ps.length + ' / ' + NET.max + '</b>' + (NET.fillBots && ps.length < NET.max ? ' &nbsp;<span style="color:#9fe9ff">(+' + (NET.max - ps.length) + ' bots)</span>' : '') + '</p><div style="margin:0 0 10px;color:#9fe9ff">' + ps.map(p => 'P' + (p.id + 1) + (p.id === 0 ? ' (you)' : '')).join(' &nbsp; ') + '</div>' +
+        '<p style="margin:0 0 6px">Players: <b>' + ps.length + ' / ' + NET.max + '</b>' + (NET.fillBots && ps.length < NET.max ? ' &nbsp;<span style="color:#9fe9ff">(+' + (NET.max - ps.length) + ' bots)</span>' : '') + '</p><div style="margin:0 0 10px;color:#9fe9ff">' + ps.map(p => pname(p.id) + (p.id === 0 ? ' (you)' : '')).join(' &nbsp; ') + '</div>' +
         '<button id="go" style="' + btn('#1f8a2e') + '"' + (ps.length < 2 ? ' disabled' : '') + '>Pick cars</button><button id="nx" style="' + btn('#7a1010') + '">Close room</button>' +
         '<p style="color:#8fa3d8;font-size:12px;margin:8px 0 0">Waiting for players... New players can keep joining until the race starts.</p>');
       $('#go').onclick = () => { state.net = true; NET.ok = true; state.twoPlayer = false; state.selPlayer = 0; netOverlayClose(); A.play('menu'); go('carselect'); };
@@ -3999,7 +4086,7 @@ function netOverlay() {
   home(); document.body.appendChild(d);
 }
 function startGhostRace(ti) {
-  const gh = loadGhost(ti); if (!gh) { notice('No ghost for race ' + (ti + 1) + ' yet.\nFinish the race once to record one.'); return; }
+  const gh = loadGhost(ti); if (!gh) { startRace(ti); toast('No ghost on race ' + (ti + 1) + ' yet - finish this race to record one'); return; }
   state.track = ti; state.paused = false; state.pauseOpts = false; clearInput(); state.twoPlayer = false;
   state.race = RR.createRace({ trackIndex: ti, players: [{ carId: state.carSel[0] }], mode: 'ghost', ghost: gh });
   state.cams = [{ car: state.race.cars[0], x: state.race.cars[0].x, y: state.race.cars[0].y }];
@@ -4031,11 +4118,12 @@ function finishRace() {
   race.phase = 'finished';
   const st = RR.standings(race);
   const players = st.filter(c => c.player >= 0);
-  const res = { standings: st.map(c => ({ name: c.player >= 0 ? (race.twoPlayer ? 'P' + (c.player + 1) : 'YOU') : c.liv.name, liv: c.liv, time: c.finished ? c.finishTime : null, player: c.player })), stars: 0, unlockedNext: false };
+  const res = { standings: st.map(c => ({ name: c.player >= 0 ? (race.twoPlayer ? (c.player === 0 && myName() ? myName() : 'P' + (c.player + 1)) : (myName() || 'YOU')) : c.liv.name, liv: c.liv, time: c.finished ? c.finishTime : null, player: c.player })), stars: 0, unlockedNext: false };
   if (race.custom) {
     res.pos = st.indexOf(players[0]) + 1; res.stars = 0; const id = state.custom && state.custom.def.id; save.customBest = save.customBest || {};
     if (id && players[0].finished && (!save.customBest[id] || players[0].finishTime < save.customBest[id])) { save.customBest[id] = players[0].finishTime; res.newBest = true; persist();
       if (race.rec && !race.twoPlayer && race.camp == null) { saveGhost('c_' + id, race.rec, players[0].finishTime, state.carSel[0], race.recK); res.newGhost = true; } }
+    else if (id && players[0].finished && race.rec && !race.twoPlayer && race.camp == null && !ghostBeats('c_' + id, players[0].finishTime)) { saveGhost('c_' + id, race.rec, players[0].finishTime, state.carSel[0], race.recK); res.newGhost = true; }
   } else if (!race.twoPlayer) {
     const pos = st.indexOf(players[0]) + 1;
     res.pos = pos; res.stars = pos <= 3 ? 4 - pos : 0;
@@ -4043,6 +4131,7 @@ function finishRace() {
     const doneBefore = racesDone();
     if (res.stars > save.stars[i]) save.stars[i] = res.stars;
     if (players[0].finished && (!save.best[i] || players[0].finishTime < save.best[i])) { save.best[i] = players[0].finishTime; if (race.rec) { saveGhost(i, race.rec, players[0].finishTime, state.carSel[0], race.recK); res.newGhost = true; } }
+    else if (players[0].finished && race.rec && !ghostBeats(i, players[0].finishTime)) { saveGhost(i, race.rec, players[0].finishTime, state.carSel[0], race.recK); res.newGhost = true; }   // no ghost yet (best time set before ghosts existed)
     if (pos <= 3 && i + 1 > save.unlocked && i < 17) { save.unlocked = i + 1; res.unlockedNext = true; }
     const newCars = RR.CARS.filter(c => c.unlock && doneBefore < c.unlock && racesDone() >= c.unlock);
     if (newCars.length) res.newCar = newCars.map(c => c.name).join(' & ');
@@ -4332,6 +4421,7 @@ function drawView(race, cam, vx, vy, vw, vh) {
   ctx.imageSmoothingEnabled = false;
   fxGrass(race, cx - 12, cy - 12, cx + ww + 12, cy + wh + 12, state.paused && race.mode !== 'net' ? 0 : 1);
   const inView = (x, y, m) => x > cx - m && x < cx + ww + m && y > cy - m && y < cy + wh + m;
+  if (race.driftZone) drawDriftZones(race, inView);
   for (const p of race.pickups) {
     if (!p.active || !inView(p.x, p.y, 20)) continue;
     ctx.drawImage(pickupSpr[p.type], Math.round(p.x - 8.5), Math.round(p.y - 8.5));
@@ -4366,7 +4456,7 @@ function drawView(race, cam, vx, vy, vw, vh) {
   ctx.restore(); fxPost(race, cx, cy, ww, wh, vx, vy, vw, vh); ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip(); ctx.setTransform(k, 0, 0, k, vx * S, vy * S); ctx.translate(-cx, -cy);
   // POS label above player car [observed "POS 5 / 8"]
   for (const c of race.cars) {
-    if (race.video || race.drift || c !== cam.car || !inView(c.x, c.y, 30)) continue;
+    if (race.video || c !== cam.car || !inView(c.x, c.y, 30)) continue;
     const pos = RR.positionOf(race, c), txt = 'POS ' + pos + ' / ' + race.cars.length, w = RR.textWidth(txt, 1);
     const lx = Math.round(c.x - w / 2), ly = Math.round(c.y - 30);
     ctx.fillStyle = 'rgba(60,60,60,0.55)'; roundRect(ctx, lx - 4, ly - 3, w + 8, 13, 3); ctx.fill();
@@ -4454,8 +4544,8 @@ function drawHUD(race, car, vx, vy, vw, vh) {
   // top band [observed]
   ctx.fillStyle = 'rgba(40,40,40,0.38)'; ctx.fillRect(0, 0, vw, 14);
   const pos = RR.positionOf(race, car);
-  const pw = race.drift ? 0 : 6 * big - big + 2 + RR.textWidth(ordinal(pos), 2);
-  if (!race.drift) { ctx.fillStyle = 'rgba(40,40,40,0.38)'; ctx.fillRect(0, 14, pw + 4, 7 * big + 4 - 14 + 2);
+  const pw = 6 * big - big + 2 + RR.textWidth(ordinal(pos), 2);
+  { ctx.fillStyle = 'rgba(40,40,40,0.38)'; ctx.fillRect(0, 14, pw + 4, 7 * big + 4 - 14 + 2);
   RR.pixText(ctx, String(pos), 2, 2, big, HUDC);
   RR.pixText(ctx, ordinal(pos), 2 + 6 * big, 2 + 7 * big - 14, 2, HUDC); }
   const tt = fmtTime(race.time), tw = RR.textWidth(tt, 2);
@@ -4573,7 +4663,7 @@ function drawButton(b, focused) {
     if (tags.length) { ctx.fillStyle = 'rgba(0,0,0,0.6)'; roundRect(ctx, b.x + 3, b.y + b.h - 10, b.w - 6, 9, 3); ctx.fill();
       ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 7px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(tags.join(' '), b.x + b.w / 2, b.y + b.h - 5.5); }
   }
-  if (b.flag) drawFlag(b.x + 8, b.y + 6, b.w - 16, b.h - 12);
+  if (b.flag) drawFlag(b.x + 5, b.y + 4, b.w - 10, b.h - 8);
   if (b.track != null) drawTrackTile(b);
   else if (b.label) {
     ctx.fillStyle = b.locked ? '#a06a6a' : '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -4583,14 +4673,15 @@ function drawButton(b, focused) {
   }
   ctx.restore();
 }
-function drawFlag(x, y, w, h) {
-  ctx.fillStyle = '#1a2a7a'; ctx.fillRect(x, y, w, h);
+function drawFlag(x, y, w, h) {   // Union Jack at its real 2:1 shape, line widths scaled to the flag
+  const fh = Math.min(h, w / 2), fw = fh * 2; x += (w - fw) / 2; y += (h - fh) / 2; w = fw; h = fh; const u = h / 30;
   ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.moveTo(x + w, y); ctx.lineTo(x, y + h); ctx.stroke();
-  ctx.strokeStyle = '#d0202a'; ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.fillStyle = '#fff'; ctx.fillRect(x + w / 2 - 3, y, 6, h); ctx.fillRect(x, y + h / 2 - 3, w, 6);
-  ctx.fillStyle = '#d0202a'; ctx.fillRect(x + w / 2 - 1.5, y, 3, h); ctx.fillRect(x, y + h / 2 - 1.5, w, 3);
-  ctx.restore();
+  ctx.fillStyle = '#012169'; ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 6 * u; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.moveTo(x + w, y); ctx.lineTo(x, y + h); ctx.stroke();
+  ctx.strokeStyle = '#c8102e'; ctx.lineWidth = 2 * u; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.fillRect(x + w / 2 - 5 * u, y, 10 * u, h); ctx.fillRect(x, y + h / 2 - 5 * u, w, 10 * u);
+  ctx.fillStyle = '#c8102e'; ctx.fillRect(x + w / 2 - 3 * u, y, 6 * u, h); ctx.fillRect(x, y + h / 2 - 3 * u, w, 6 * u);
+  ctx.restore(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, w, h);
 }
 function star(cx, cy, r, filled) {
   ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
@@ -4672,7 +4763,7 @@ function drawNetResults(r) {
   rows.forEach((o, k) => {
     const y = TY + k * (RR.MOBILE ? 30 : 24), me = o.id === NET.myId;
     ctx.font = 'bold 13px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillStyle = me ? '#ffcf40' : '#9fe9ff';
-    ctx.textAlign = 'left'; ctx.fillText((k + 1) + '.  ' + (r.bots && r.bots[o.id] ? 'BOT  ' + r.bots[o.id].replace('Team ', '') : 'P' + (o.id + 1) + (me ? ' (you)' : '') + '  ' + RR.CARS[r.cars[o.id]].name.replace('Team ', '')), LX, y);
+    ctx.textAlign = 'left'; ctx.fillText((k + 1) + '.  ' + (r.bots && r.bots[o.id] ? 'BOT  ' + r.bots[o.id].replace('Team ', '') : pname(o.id) + (me ? ' (you)' : '') + '  ' + RR.CARS[r.cars[o.id]].name.replace('Team ', '')), LX, y);
     ctx.textAlign = 'right'; ctx.fillText(o.t != null ? fmtTime(o.t) : r.left[o.id] ? 'left' : 'racing...', RX, y);
   });
   ctx.textAlign = 'center'; ctx.fillStyle = '#bcd0ff'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif';
@@ -4902,7 +4993,7 @@ function render() {
       ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 13px "Trebuchet MS",sans-serif';
       ctx.fillText('Connected!', VW / 2, VH / 2 - 20); ctx.fillStyle = '#bcd0ff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif';
       ctx.fillText('Waiting for the host to pick a race' + '...'.slice(0, 1 + ((state.t * 2) | 0) % 3), VW / 2, VH / 2);
-      ctx.fillStyle = '#9fe9ff'; ctx.fillText('In this room: ' + (NET.rosterList || []).map(p => 'P' + (p.id + 1) + (p.id === NET.myId ? ' (you)' : '') + (p.car == null ? ' - picking' : ' - ' + RR.CARS[p.car].name.replace('Team ', ''))).join('   '), VW / 2, VH / 2 + 20); ctx.restore(); drawButtons(); break;
+      ctx.fillStyle = '#9fe9ff'; ctx.fillText('In this room: ' + (NET.rosterList || []).map(p => pname(p.id) + (p.id === NET.myId ? ' (you)' : '') + (p.car == null ? ' - picking' : ' - ' + RR.CARS[p.car].name.replace('Team ', ''))).join('   '), VW / 2, VH / 2 + 20); ctx.restore(); drawButtons(); break;
     case 'race': {
       const race = state.race; flushSkids(race);
       if (state.cams.length === 1) drawView(race, state.cams[0], 0, 0, VW, VH);
