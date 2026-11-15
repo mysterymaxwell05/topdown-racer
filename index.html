@@ -1123,6 +1123,18 @@ function modeRace(race, opts) {
       if (p.id === opts.myId) add(p.car, p.id, { player: 0, netId: p.id });
       else add(p.car, p.id, { puppet: 'remote', netBuf: [], netId: p.id });
     }
+    // bots in the empty spots: the host drives them, everyone else sees them like remote cars
+    const def = opts.trackDef, diffRace = def ? ({ easy: 0, normal: 8, hard: 17 })[def.diff || 'normal'] : opts.trackIndex;
+    for (const b of opts.netBots || []) {
+      const liv = b.car != null ? RR.CARS[b.car] : RR.AI_LIVERIES[b.ai % RR.AI_LIVERIES.length], g = T.grid[b.slot];
+      let car;
+      if (opts.botHost) {
+        car = makeCar(liv, RR.AI_STATS, RR.aiScaleForRace(diffRace) * (0.90 + race.rnd() * 0.14), g); car.ai = true; car.player = -1;
+        car.aiOffset = (race.rnd() - 0.5) * T.W * 0.45; car.aiLook = 0.8 + race.rnd() * 0.45; car.aiBrave = 0.85 + race.rnd() * 0.3; car.aiWeave = race.rnd() * 6.28; car.aiCut = 0.15 + race.rnd() * 0.3;
+      } else { car = makeCar(liv, liv, 1.0, g); car.player = -1; car.ai = false; car.puppet = 'remote'; car.netBuf = []; }
+      Object.assign(car, { gridSlot: b.slot, id: race.cars.length, carId: b.car != null ? b.car : -1, netId: b.id, netBot: true });
+      car.sprite = RR.makeCarSprite(car.liv); initProgress(T, car); race.cars.push(car);
+    }
   }
   if (T.items && T.items.pickAt) {   // hand-placed pickups (track maker): stay in place, random type if none chosen
     const types = ['S', 'A', 'T', 'N'];
@@ -2466,16 +2478,16 @@ function startRace(ti, seed) {
 // ================= Wi-Fi rooms: up to 6 players (WebRTC; host connects to everyone and relays) =================
 // Pairing: short room code through a public relay (ntfy.sh, only the connection details pass through it - the race itself
 // goes straight between the devices), or offline long codes for 2 players.
-const NET = { role: null, ok: false, myId: 0, max: 6, peers: [], host: null, overlay: null, sendT: 0, roster: {}, room: null, es: null, chat: [], nextId: 1 };
+const NET = { role: null, ok: false, myId: 0, max: 6, fillBots: true, peers: [], host: null, overlay: null, sendT: 0, roster: {}, room: null, es: null, chat: [], nextId: 1 };
 RR.RELAY = RR.RELAY || 'https://ntfy.sh/';
 const CHAT_PRESETS = ['Good luck!', 'See you later!', "Let's go!", 'Ready!', 'GG!', 'Nice race!', 'Rematch?', 'Watch out!', 'Catch me if you can!', 'Ha ha!'];
 function netSend(ch, m) { try { if (ch && ch.readyState === 'open') ch.send(typeof m === 'string' ? m : JSON.stringify(m)); } catch (e) {} }
-function netEvent(m) {   // reliable message from me to everyone
-  m.id = NET.myId;
+function netEvent(m, asId) {   // reliable message from me (or one of my bots) to everyone
+  m.id = asId != null ? asId : NET.myId;
   if (NET.role === 'host') { const s = JSON.stringify(m); NET.peers.forEach(p => netSend(p.ev, s)); } else if (NET.host) netSend(NET.host.ev, m);
 }
-function netStateOut(m) {
-  m.id = NET.myId;
+function netStateOut(m, asId) {
+  m.id = asId != null ? asId : NET.myId;
   if (NET.role === 'host') { const s = JSON.stringify(m); NET.peers.forEach(p => netSend(p.st, s)); } else if (NET.host) netSend(NET.host.st, m);
 }
 async function netPack(desc) {
@@ -2598,7 +2610,7 @@ function netLeave() { netEvent({ type: 'bye' }); setTimeout(netCloseAll, 150); s
 function netPlayers() { return (NET.rosterList || []).filter(p => p.id === 0 || NET.role !== 'host' || NET.peers.some(l => l.id === p.id)); }
 function startNetRace(m) {
   state.track = m.track; state.paused = false; state.pauseOpts = false; clearInput(); state.twoPlayer = false;
-  state.race = RR.createRace({ trackIndex: m.def ? 0 : m.track, trackDef: m.def, mode: 'net', netPlayers: m.players, myId: NET.myId, raceSeed: m.seed, players: [{ carId: state.carSel[0] }] });
+  state.race = RR.createRace({ trackIndex: m.def ? 0 : m.track, trackDef: m.def, mode: 'net', netPlayers: m.players, netBots: m.bots || [], botHost: NET.role === 'host', myId: NET.myId, raceSeed: m.seed, players: [{ carId: state.carSel[0] }] });
   state.cams = [{ car: state.race.cars.find(c => c.player === 0) }]; state.cams[0].x = state.cams[0].car.x; state.cams[0].y = state.cams[0].car.y;
   state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null; NET.sendT = 0;
   A.setMusic('game'); A.setEngines(1);
@@ -2609,15 +2621,23 @@ function netPickRace(i, def) {   // host picked a race (or one of their own trac
   const missing = players.filter(p => p.car == null).map(p => 'P' + (p.id + 1));
   if (missing.length) { notice('Waiting for ' + missing.join(', ') + ' to pick a car...'); return; }
   if (NET.es) { NET.es.close(); NET.es = null; }   // room closes to new players once racing
-  const m = { type: 'start', track: i, seed: (Math.random() * 0xffffff) | 0, players: players.map(p => ({ id: p.id, car: p.car })) };
+  const m = { type: 'start', track: i, seed: (Math.random() * 0xffffff) | 0, players: players.map(p => ({ id: p.id, car: p.car })), bots: [] };
+  if (NET.fillBots) {   // bots take the empty spots in the room
+    const taken = new Set(players.map(p => p.id)), usedCars = new Set(players.map(p => p.car)), freeCars = RR.CARS.map(c => c.id).filter(id => !usedCars.has(id));
+    for (let slot = 0, k = 0; slot < 8 && players.length + m.bots.length < NET.max; slot++) {
+      if (taken.has(slot)) continue;
+      m.bots.push(Object.assign({ id: 10 + slot, slot }, k < freeCars.length ? { car: freeCars[k] } : { ai: k - freeCars.length })); k++;
+    }
+  }
   if (def) m.def = RR.Editor.playDef(def);
   netEvent(m); startNetRace(m);
 }
 function netTick(race, dt) {   // send my car ~20x a second
   if (!race || race.mode !== 'net' || race.phase === 'countdown') return;
   NET.sendT -= dt; if (NET.sendT > 0) return; NET.sendT = 0.05;
-  const c = race.cars.find(k => k.player === 0);
-  netStateOut({ type: 's', t: +race.time.toFixed(3), x: +c.x.toFixed(1), y: +c.y.toFixed(1), a: +c.a.toFixed(3), vx: +c.vx.toFixed(1), vy: +c.vy.toFixed(1), n: c.nitro > 0 ? 1 : 0 });
+  const send = (c, id) => netStateOut({ type: 's', t: +race.time.toFixed(3), x: +c.x.toFixed(1), y: +c.y.toFixed(1), a: +c.a.toFixed(3), vx: +c.vx.toFixed(1), vy: +c.vy.toFixed(1), n: c.nitro > 0 ? 1 : 0 }, id);
+  send(race.cars.find(k => k.player === 0));
+  if (NET.role === 'host') for (const b of race.cars) if (b.netBot && !b.puppet) send(b, b.netId);
 }
 // ---- relay (room codes): host listens on the room's topic and makes an offer for each guest that asks to join ----
 const roomTopic = code => RR.RELAY + 'retroracing-' + String(code).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -2730,20 +2750,21 @@ function netOverlay() {
   const hostSetup = () => {
     set('<h2 style="margin:0 0 6px">Host a room</h2><p style="margin:4px 0;color:#bcd0ff">Room code (keep this one or type your own, 4-10 letters/numbers):</p>' +
       '<input id="rc" maxlength="10" style="' + inp + '" value="' + randomRoom() + '"><p style="margin:12px 0 4px;color:#bcd0ff">Players in the room (you included):</p>' +
-      '<select id="mx" style="font:bold 16px sans-serif;padding:4px 8px;border-radius:7px">' + [2, 3, 4, 5, 6].map(n => '<option' + (n === 6 ? ' selected' : '') + '>' + n + '</option>').join('') + '</select><br>' +
+      '<select id="mx" style="font:bold 16px sans-serif;padding:4px 8px;border-radius:7px">' + [2, 3, 4, 5, 6].map(n => '<option' + (n === 6 ? ' selected' : '') + '>' + n + '</option>').join('') + '</select>' +
+      '<label style="display:block;margin:10px 0 2px;color:#bcd0ff"><input type="checkbox" id="fb" checked style="transform:scale(1.3);margin-right:8px">Fill empty spots with bots</label><br>' +
       '<button id="go" style="' + btn('#1f8a2e') + '">Open room</button><button id="nx" style="' + btn('#7a1010') + '">Back</button><p id="st" style="color:#ffcf40;min-height:18px;margin:6px 0 0"></p>');
     $('#nx').onclick = home;
     $('#go').onclick = () => {
       const code = $('#rc').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (code.length < 4) { $('#st').textContent = 'Use at least 4 letters/numbers.'; return; }
-      hostRoom(code, +$('#mx').value); lobby();
+      hostRoom(code, +$('#mx').value); NET.fillBots = $('#fb').checked; lobby();
     };
   };
   const lobby = () => {
     const draw = () => {
       const ps = netPlayers();
       set('<h2 style="margin:0 0 6px">Your room</h2>' + (NET.room ? 'Tell everyone this code:' : 'Connected with offline codes:').replace(/^/, '<p style="margin:0;color:#bcd0ff">') + '</p><div style="font:bold 40px monospace;letter-spacing:6px;color:#ffcf40;margin:4px 0 10px">' + (NET.room || 'OFFLINE') + '</div>' +
-        '<p style="margin:0 0 6px">Players: <b>' + ps.length + ' / ' + NET.max + '</b></p><div style="margin:0 0 10px;color:#9fe9ff">' + ps.map(p => 'P' + (p.id + 1) + (p.id === 0 ? ' (you)' : '')).join(' &nbsp; ') + '</div>' +
+        '<p style="margin:0 0 6px">Players: <b>' + ps.length + ' / ' + NET.max + '</b>' + (NET.fillBots && ps.length < NET.max ? ' &nbsp;<span style="color:#9fe9ff">(+' + (NET.max - ps.length) + ' bots)</span>' : '') + '</p><div style="margin:0 0 10px;color:#9fe9ff">' + ps.map(p => 'P' + (p.id + 1) + (p.id === 0 ? ' (you)' : '')).join(' &nbsp; ') + '</div>' +
         '<button id="go" style="' + btn('#1f8a2e') + '"' + (ps.length < 2 ? ' disabled' : '') + '>Pick cars</button><button id="nx" style="' + btn('#7a1010') + '">Close room</button>' +
         '<p style="color:#8fa3d8;font-size:12px;margin:8px 0 0">Waiting for players... New players can keep joining until the race starts.</p>');
       $('#go').onclick = () => { state.net = true; NET.ok = true; state.twoPlayer = false; state.selPlayer = 0; netOverlayClose(); A.play('menu'); go('carselect'); };
@@ -2794,7 +2815,7 @@ function startGhostRace(ti) {
 function finishModeRace(race) {
   const me = race.cars.find(c => c.player === 0), other = race.cars.find(c => c.puppet), i = race.trackIndex;
   const res = { mode: race.mode, myTime: me.finishTime, myCar: me.liv, otherCar: other.liv, otherTime: other.finished ? other.finishTime : (race.mode === 'ghost' ? other.ghostTime : null), standings: [] };
-  if (race.mode === 'net') { netEvent({ type: 'fin', t: me.finishTime }); res.times = {}; res.cars = {}; res.left = {}; race.cars.forEach(c => { res.cars[c.netId] = c.carId; res.times[c.netId] = c.finished ? c.finishTime : (c.netFin != null ? c.netFin : null); if (c.left) res.left[c.netId] = 1; }); }
+  if (race.mode === 'net') { netEvent({ type: 'fin', t: me.finishTime }); res.times = {}; res.cars = {}; res.left = {}; res.bots = {}; race.cars.forEach(c => { res.cars[c.netId] = c.carId; if (c.netBot) res.bots[c.netId] = c.liv.name; res.times[c.netId] = c.finished ? c.finishTime : (c.netFin != null ? c.netFin : null); if (c.left) res.left[c.netId] = 1; }); }
   if (race.mode === 'ghost' && me.finished && (!save.best[i] || me.finishTime < save.best[i])) {
     save.best[i] = me.finishTime; persist(); res.newBest = true;
     if (race.rec) saveGhost(i, race.rec, me.finishTime, state.carSel[0]);
@@ -2835,6 +2856,8 @@ function handleEvents(race) {
     if (e.type === 'buzz') A.play('buzz_full');
     else if (e.type === 'finalLap') A.say('Final lap');
     else if (e.type === 'pickup' && mine) { A.play(e.kind === 'N' ? 'nitro' : 'pickup'); A.say(RR.PICKUPS[e.kind].voice); if (race.mode === 'net') netEvent({ type: 'pk', i: e.idx }); }
+    else if (e.type === 'pickup' && race.mode === 'net' && e.car.netBot && !e.car.puppet) netEvent({ type: 'pk', i: e.idx });
+    else if (e.type === 'finish' && race.mode === 'net' && e.car.netBot && !e.car.puppet) { netEvent({ type: 'fin', t: e.car.finishTime }, e.car.netId); if (state.result && state.result.mode === 'net') state.result.times[e.car.netId] = e.car.finishTime; }
     else if (e.type === 'wall') { if (mine) A.play('wall', e.power); if (e.power > 60) fxBurst('smoke', e.car.x, e.car.y, Math.min(10, e.power / 25) | 0, 50); }
     else if (e.type === 'car' && (mine || (e.other && e.other.player >= 0))) A.play('car', e.power);
     else if (e.type === 'cone' && mine) A.play('cone');
@@ -3402,7 +3425,7 @@ function drawNetResults(r) {
   rows.forEach((o, k) => {
     const y = TY + k * (RR.MOBILE ? 30 : 24), me = o.id === NET.myId;
     ctx.font = 'bold 13px "Trebuchet MS","Segoe UI",sans-serif'; ctx.fillStyle = me ? '#ffcf40' : '#9fe9ff';
-    ctx.textAlign = 'left'; ctx.fillText((k + 1) + '.  P' + (o.id + 1) + (me ? ' (you)' : '') + '  ' + RR.CARS[r.cars[o.id]].name.replace('Team ', ''), LX, y);
+    ctx.textAlign = 'left'; ctx.fillText((k + 1) + '.  ' + (r.bots && r.bots[o.id] ? 'BOT  ' + r.bots[o.id].replace('Team ', '') : 'P' + (o.id + 1) + (me ? ' (you)' : '') + '  ' + RR.CARS[r.cars[o.id]].name.replace('Team ', '')), LX, y);
     ctx.textAlign = 'right'; ctx.fillText(o.t != null ? fmtTime(o.t) : r.left[o.id] ? 'left' : 'racing...', RX, y);
   });
   ctx.textAlign = 'center'; ctx.fillStyle = '#bcd0ff'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif';
@@ -3575,6 +3598,10 @@ function tick(dt) {
   if (state.screen === 'title' && state.t > 3) go('menu');
   A.setPaused(state.screen === 'race' && state.paused);
   if ((state.musicWatchT = (state.musicWatchT || 0) + dt) > 0.5) { state.musicWatchT = 0; A.musicWatch(); }
+  if (state.screen === 'results' && state.race && state.race.mode === 'net' && NET.role === 'host' && state.race.cars.some(c => c.netBot && !c.puppet && !c.finished) && state.race.time < 600) {
+    const race = state.race; state.acc += dt; netTick(race, dt);
+    while (state.acc >= RR.SIM_DT) { RR.step(race, RR.SIM_DT, []); handleEvents(race); state.acc -= RR.SIM_DT; }
+  }
   if (state.screen === 'race' && state.race && (!state.paused || state.race.mode === 'net')) {
     const race = state.race;
     state.acc += dt;
