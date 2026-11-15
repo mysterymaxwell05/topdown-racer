@@ -31,7 +31,7 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
-RR.VERSION = '1.7.1';
+RR.VERSION = '1.7.2';
 RR.AI_DRIFT = { grip: 1, turn: 1, brake: 1, bendFrom: 0.2, bendSpan: 0.35, minSpeed: 100, edge: 0.92 };   // bots slide only in real corners, ease off near the road edge   // bots: lower grip / sharper turn-in = more sliding in corners
 RR.RUBBER = { close: 160, ramp: 200, boost: 0.035, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
 
@@ -3433,7 +3433,7 @@ function wrapLines(text, w, px) { ctx.font = px + 'px "Trebuchet MS",sans-serif'
 
 // ---------------- friends, rivals and invites (Wi-Fi) ----------------
 function escH(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
-function friends() { save.friends = save.friends || []; return save.friends; }
+function friends() { save.friends = save.friends || []; save.friends.forEach(f => delete f.invited); return save.friends; }
 function rivals() { save.rivals = save.rivals || []; return save.rivals; }
 function addFriend(dev, name) { const F = friends(); const f = F.find(x => x.dev === dev); if (f) { if (name) f.name = name; } else F.unshift({ dev, name: cleanName(name) || null, added: Date.now() }); persist(); }
 function rivalsOnce() { const r = state.result; if (r && r.mode === 'net' && !r.rivalsNoted) { r.rivalsNoted = true; noteRivals(r); } }
@@ -3448,7 +3448,9 @@ function noteRivals(res) {   // after a Wi-Fi race: remember the other players a
       R.sort((a, b) => (b.last || 0) - (a.last || 0)); R.length = Math.min(R.length, 20); }
     persist(); } catch (e) {}
 }
+function invitedNow(dev) { return !!(NET.invited && NET.invited.room === NET.room && NET.invited.devs.includes(dev)); }
 function sendInvite(dev) {
+  if (!NET.invited || NET.invited.room !== NET.room) NET.invited = { room: NET.room, devs: [] }; if (!NET.invited.devs.includes(dev)) NET.invited.devs.push(dev);
   try { fetch(RR.RELAY + 'retroracing-u-' + dev, { method: 'POST', body: JSON.stringify({ t: 'inv', room: NET.room, from: myName() || 'A friend', dev: devId() }) }); } catch (e) {}
 }
 let inviteES = null;
@@ -4045,7 +4047,11 @@ function startRace(ti, seed) {
 const NET = { role: null, ok: false, myId: 0, max: 6, fillBots: true, peers: [], host: null, overlay: null, sendT: 0, roster: {}, room: null, es: null, chat: [], nextId: 1 };
 RR.RELAY = RR.RELAY || 'https://ntfy.sh/';
 // how devices find a path to each other: several public STUN servers (+ a TURN relay, if one is set up, for players on different networks)
-RR.ICE_SERVERS = RR.ICE_SERVERS || [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' }];
+RR.ICE_SERVERS = RR.ICE_SERVERS || (() => {
+  const T = { username: '4d1f7bfb7d919074a4fc98f1', credential: 'XBplxL+p9W7NJm7i' };   // Metered free relay (500 MB/month, never charged) for players on different networks
+  return [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478', 'stun:stun.relay.metered.ca:80'] },
+    Object.assign({ urls: ['turn:global.relay.metered.ca:80', 'turn:global.relay.metered.ca:80?transport=tcp', 'turn:global.relay.metered.ca:443', 'turns:global.relay.metered.ca:443?transport=tcp'] }, T)];
+})();
 const CHAT_PRESETS = ['Good luck!', 'See you later!', "Let's go!", 'Ready!', 'GG!', 'Nice race!', 'Rematch?', 'Watch out!', 'Catch me if you can!', 'Ha ha!'];
 function netSend(ch, m) { try { if (ch && ch.readyState === 'open') ch.send(typeof m === 'string' ? m : JSON.stringify(m)); } catch (e) {} }
 function netEvent(m, asId) {   // reliable message from me (or one of my bots) to everyone
@@ -4245,7 +4251,7 @@ function joinRoom(code, status) {
     if (m.g !== gid) return;
     if (m.k === 'full') { status('That room is full (or already racing).'); return; }
     if (m.k === 'offer' && !answered) { answered = true; status('Found the host - connecting...'); relayPost(code, { k: 'answer', g: gid, d: await netGuestAnswer(m.d) });
-      setTimeout(() => { if (!NET.ok && NET.role === 'guest' && NET.room === code) status('Could not connect to the host. This usually happens when you are on different networks (another house, or a phone on mobile data). Try both on the same Wi-Fi.'); }, 15000); }
+      setTimeout(() => { if (!NET.ok && NET.role === 'guest' && NET.room === code) status('Still connecting... (going through the relay server). If nothing happens in a few more seconds, close and try joining again.'); }, 20000); }
   });
   NET.es.onopen = () => { relayPost(code, { k: 'join', g: gid }).catch(() => status('Could not reach the room server - check the internet, or use offline codes.')); };
   NET.es.onerror = () => { if (!NET.ok) status('Could not reach the room server - check the internet, or use offline codes.'); };
@@ -4360,10 +4366,10 @@ function netOverlay() {
       '<p style="margin:0 0 4px;color:#bcd0ff;font-size:13px">Your friend code (give it to friends so they can add you):</p><div style="display:flex;gap:6px;align-items:center"><span style="font:bold 24px monospace;letter-spacing:3px;color:#ffcf40">' + devId().toUpperCase() + '</span><button id="cpf" style="' + btn() + ';padding:5px 10px;font-size:12px">Copy</button></div>' +
       '<div style="display:flex;gap:6px;align-items:center;margin:8px 0"><input id="fa" maxlength="12" placeholder="FRIEND CODE" style="' + inp + ';font-size:15px;width:150px"><button id="fadd" style="' + btn('#1f8a2e') + ';padding:6px 10px;font-size:13px">Add friend</button></div><p id="fst" style="color:#ffcf40;min-height:14px;margin:0;font-size:12px"></p>' +
       '<h3 style="margin:8px 0 2px">Friends</h3>' + (F.length ? F.map((f, i) => row('<b>' + escH(f.name || 'Friend') + '</b> <span style="color:#8fa3d8;font-size:11px">' + f.dev.toUpperCase() + '</span>',
-        (inRoom ? sb('inv' + i, f.invited ? 'Invited!' : 'Invite', '#6a2ab8') : '') + sb('rm' + i, 'Remove', '#7a1010'))).join('') : '<p style="color:#8fa3d8;font-size:13px;margin:2px 0">No friends yet. Add one with their friend code, or from your rivals below.</p>') +
-      (inRoom ? '' : '<p style="color:#8fa3d8;font-size:12px;margin:4px 0">Host a room to invite friends: they get a pop-up in their game to join.</p>') +
+        (inRoom ? sb('inv' + i, invitedNow(f.dev) ? 'Invited!' : 'Invite', '#6a2ab8') : '') + sb('rm' + i, 'Remove', '#7a1010'))).join('') : '<p style="color:#8fa3d8;font-size:13px;margin:2px 0">No friends yet. Add one with their friend code, or from your rivals below.</p>') +
+      (inRoom ? '<div style="display:flex;gap:6px;align-items:center;margin:6px 0"><input id="icode" maxlength="12" placeholder="ANY FRIEND CODE" style="' + inp + ';font-size:14px;width:170px"><button id="ibtn" style="' + btn('#6a2ab8') + ';padding:6px 10px;font-size:13px">Invite code</button></div>' : '<button id="hostinv" style="' + btn('#6a2ab8') + ';padding:7px 12px;font-size:14px">Open a room &amp; invite</button><p style="color:#8fa3d8;font-size:12px;margin:2px 0 4px">Friends get a pop-up in their game to join your room.</p>') +
       '<h3 style="margin:10px 0 2px">Recent rivals</h3>' + (R.length ? R.map((r, i) => row('<b>' + escH(r.name || 'Player') + '</b> <span style="color:#9fe9ff;font-size:12px">you ' + r.w + ' - ' + r.l + ' them</span>',
-        F.some(f => f.dev === r.dev) ? '<span style="color:#7cff6a;font-size:12px">friend</span>' : sb('af' + i, 'Add friend', '#1f8a2e'))).join('') : '<p style="color:#8fa3d8;font-size:13px;margin:2px 0">Players you race in Wi-Fi rooms show up here with your win / loss record.</p>') +
+        (inRoom ? sb('ri' + i, invitedNow(r.dev) ? 'Invited!' : 'Invite', '#6a2ab8') : '') + (F.some(f => f.dev === r.dev) ? '<span style="color:#7cff6a;font-size:12px">friend</span>' : sb('af' + i, 'Add friend', '#1f8a2e')))).join('') : '<p style="color:#8fa3d8;font-size:13px;margin:2px 0">Players you race in Wi-Fi rooms show up here with your win / loss record.</p>') +
       '<button id="nx" style="' + btn('#7a1010') + ';margin-top:10px">Back</button>');
     $('#nx').onclick = back;
     $('#cpf').onclick = () => { try { navigator.clipboard.writeText(devId().toUpperCase()); } catch (e) {} $('#cpf').textContent = 'Copied!'; };
@@ -4372,7 +4378,10 @@ function netOverlay() {
     d.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { const a = b.dataset.a, i = +a.replace(/\D/g, '');
       if (a.startsWith('rm')) { save.friends.splice(i, 1); persist(); friendsPanel(back); }
       else if (a.startsWith('af')) { const r = R[i]; addFriend(r.dev, r.name); friendsPanel(back); }
-      else if (a.startsWith('inv')) { const f = F[i]; sendInvite(f.dev); f.invited = true; b.textContent = 'Invited!'; } });
+      else if (a.startsWith('inv')) { const f = F[i]; sendInvite(f.dev); b.textContent = 'Invited!'; }
+      else if (a.startsWith('ri')) { const r = R[i]; sendInvite(r.dev); b.textContent = 'Invited!'; } });
+    const ic = $('#icode'); if (ic) $('#ibtn').onclick = () => { const c = ic.value.toLowerCase().replace(/[^a-z0-9]/g, ''); if (!/^[a-z0-9]{4,12}$/.test(c)) { $('#fst').textContent = 'Type a friend code first.'; return; } sendInvite(c); $('#ibtn').textContent = 'Invited!'; $('#fst').textContent = 'Invite sent to ' + c.toUpperCase() + '.'; };
+    const hs = $('#hostinv'); if (hs) hs.onclick = () => { const code = randomRoom(); hostRoom(code, 6); NET.fillBots = true; friendsPanel(lobby); };
   };
   d.joinCode = code => { joinSetup(); $('#rc').value = code; $('#go').click(); };
   const joinSetup = () => {
@@ -4418,7 +4427,7 @@ function finishModeRace(race) {
   const me = race.cars.find(c => c.player === 0), other = race.cars.find(c => c.puppet), i = race.trackIndex;
   const res = { mode: race.mode, custom: race.custom, myTime: me.finishTime, myCar: me.liv, otherCar: other ? other.liv : null, otherTime: !other ? null : other.finished ? other.finishTime : (race.mode === 'ghost' ? other.ghostTime : null), standings: [] };
   if (race.mode === 'ghost' && !race.custom && me.finished) { const m = ttMedal(i, me.finishTime); res.tt = { medal: m, targets: ttTargets(i) }; save.medals = save.medals || {}; if (m > (save.medals[i] || 0)) { save.medals[i] = m; res.newMedal = true; persist(); } }
-  if (race.mode === 'net') { netEvent({ type: 'fin', t: me.finishTime }); res.times = {}; res.cars = {}; res.left = {}; res.bots = {}; race.cars.forEach(c => { res.cars[c.netId] = c.carId; if (c.netBot) res.bots[c.netId] = c.liv.name; res.times[c.netId] = c.finished ? c.finishTime : (c.netFin != null ? c.netFin : null); if (c.left) res.left[c.netId] = 1; }); }
+  if (race.mode === 'net') { setTimeout(() => { if (state.result === res) rivalsOnce(); }, 2000); netEvent({ type: 'fin', t: me.finishTime }); res.times = {}; res.cars = {}; res.left = {}; res.bots = {}; race.cars.forEach(c => { res.cars[c.netId] = c.carId; if (c.netBot) res.bots[c.netId] = c.liv.name; res.times[c.netId] = c.finished ? c.finishTime : (c.netFin != null ? c.netFin : null); if (c.left) res.left[c.netId] = 1; }); }
   if (race.mode === 'ghost' && race.custom && state.custom) {
     const id = state.custom.def.id; save.customBest = save.customBest || {};
     if (me.finished && (!save.customBest[id] || me.finishTime < save.customBest[id])) { save.customBest[id] = me.finishTime; persist(); res.newBest = true; if (race.rec) saveGhost('c_' + id, race.rec, me.finishTime, state.carSel[0], race.recK); }
@@ -5352,7 +5361,7 @@ requestAnimationFrame(frame);
 
 // ---------------- test / debug hooks ----------------
 RR.test = {
-  save: () => save, persist, go, net: { hostRoom: (c, m) => hostRoom(c, m), joinRoom: c => joinRoom(c, t => { window.__netStatus = t; }), state: () => ({ ok: NET.ok, role: NET.role, myId: NET.myId, peers: NET.peers.length, roster: NET.rosterList, chat: NET.chat.map(c => c.id + ':' + c.text) }), toCars: () => { state.net = true; NET.ok = true; netOverlayClose(); go('carselect'); }, chat: w => sendChat(w), pickCustom: d => netPickRace(-1, d) }, pickCar: () => pickCar(), camp: { open: () => openCamp(), pick: k => campPick(k), start: k => { state.campK = k; startCampRace(); }, beat: list => { campSave().beaten = list; persist(); }, cut: () => state.cut && { i: state.cut.i, n: state.cut.shots.length, kind: state.cut.shot().kind } }, playCustom: (d, h) => playCustom(d, h), activate: i => activate(buttons()[i]), loadGhost: i => loadGhost(i), buttonsList: () => buttons().map(b => ({ label: b.label, x: b.x, y: b.y, w: b.w, h: b.h })), startRace: (ti, seed, opts) => { if (opts) Object.assign(state, opts); startRace(ti, seed); },
+  save: () => save, persist, go, net: { hostRoom: (c, m) => hostRoom(c, m), joinRoom: c => joinRoom(c, t => { window.__netStatus = t; }), state: () => ({ ok: NET.ok, role: NET.role, room: NET.room, myId: NET.myId, peers: NET.peers.length, roster: NET.rosterList, chat: NET.chat.map(c => c.id + ':' + c.text) }), toCars: () => { state.net = true; NET.ok = true; netOverlayClose(); go('carselect'); }, chat: w => sendChat(w), pickCustom: d => netPickRace(-1, d) }, pickCar: () => pickCar(), camp: { open: () => openCamp(), pick: k => campPick(k), start: k => { state.campK = k; startCampRace(); }, beat: list => { campSave().beaten = list; persist(); }, cut: () => state.cut && { i: state.cut.i, n: state.cut.shots.length, kind: state.cut.shot().kind } }, playCustom: (d, h) => playCustom(d, h), activate: i => activate(buttons()[i]), loadGhost: i => loadGhost(i), buttonsList: () => buttons().map(b => ({ label: b.label, x: b.x, y: b.y, w: b.w, h: b.h })), startRace: (ti, seed, opts) => { if (opts) Object.assign(state, opts); startRace(ti, seed); },
   // run the current race headless with every car (incl. players) autopiloted
   simulate(seconds, autopilotPlayers) {
     const race = state.race; if (autopilotPlayers) race.cars.forEach(c => c.ai = true);
