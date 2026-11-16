@@ -2,7 +2,7 @@
 // - The game page (index.html) is fetched fresh from the internet first, so updates show up straight away;
 //   the saved copy is only used when there is no connection.
 // - Songs and icons are saved the first time they are played/shown and kept across updates (downloaded once).
-const CORE = 'retro-racing-34e262aa0c';            // build stamps a version here, e.g. retro-racing-4512129c1f
+const CORE = 'retro-racing-d247dd2d30';            // build stamps a version here, e.g. retro-racing-4512129c1f
 const MEDIA = 'retro-racing-media';         // songs + icons, kept across versions
 const CORE_FILES = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CORE).then(c => c.addAll(CORE_FILES)).then(() => self.skipWaiting())));

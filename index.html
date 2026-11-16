@@ -31,7 +31,7 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
-RR.VERSION = '1.7.2';
+RR.VERSION = '1.8.0';
 RR.AI_DRIFT = { grip: 1, turn: 1, brake: 1, bendFrom: 0.2, bendSpan: 0.35, minSpeed: 100, edge: 0.92 };   // bots slide only in real corners, ease off near the road edge   // bots: lower grip / sharper turn-in = more sliding in corners
 RR.RUBBER = { close: 160, ramp: 200, boost: 0.035, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
 
@@ -616,7 +616,7 @@ RR.buildTrack = function (def, index) {
   for (let i = 0; i < N; i++) { const j = (i + 3) % N; RH[i] = Math.atan2(RX[j] - RX[i], -(RY[j] - RY[i])); }
 
   const toW = p => [(p[0] + MARGIN - 1) * U, (p[1] + MARGIN - 1) * U, p[2]];
-  const items = {}; for (const k of ['treeAt', 'umbAt', 'coneAt', 'pickAt', 'lampAt']) if (def[k]) items[k] = def[k].map(toW);
+  const items = {}; for (const k of ['treeAt', 'umbAt', 'coneAt', 'pickAt', 'lampAt', 'boostAt', 'oilAt', 'jumpAt', 'bridgeAt']) if (def[k]) items[k] = def[k].map(toW);
   const T = { def, index, W, OFF, width, height, pts, cham, corners, X, Y, S, H, N, L, RX, RY, RH, step, items };
   T.cuts = (def.cuts || []).map(cd => buildCut(T, cd));
   // run-off width at every point of the road: as open as possible, but always leaving a rail between two parts of the
@@ -1463,6 +1463,7 @@ RR.createRace = function (opts) {
   const race = { T, rnd, cars: [], cones: [], pickups: [], time: 0, phase: 'countdown', countdown: RR.COUNT_LEAD + 3 * RR.COUNT_STEP + 0.04,
     trackIndex: opts.trackIndex, twoPlayer: !!opts.twoPlayer, finishOrder: [], events: [], skidQueue: [], video: !!opts.videoTest, laps: opts.videoTest ? 999 : def ? Math.max(1, Math.min(9, def.laps || 3)) : RR.LAPS, custom: !!def };
   if (opts.drift) { race.drift = { score: 0, chain: 0, chainT: 0, mult: 1, grace: 0, live: false, bestChain: 0, crashes: 0, zonePts: 0 }; race.driftZone = driftZones(T); }
+  buildStunts(race, opts);
   if (opts.videoTest) return videoRace(race, opts);
   if (opts.mode) return modeRace(race, opts);
   const used = new Set(opts.players.map(p => p.carId));
@@ -1556,9 +1557,47 @@ RR.carStats = function (c) {
   const PK = RR.PICKUPS;
   const rb = 1 + (c.rb || 0), sl = c.aiSlide || 0, AD = RR.AI_DRIFT;   // bots' catch-up boost (rubber band); bots loosen up only in real corners
   return { top: c.base.top * (1 + PK.S.per * c.up.top) * rb, acc: c.base.acc * (1 + PK.A.per * c.up.acc) * rb,
-    grip: c.base.grip * (1 + PK.T.per * c.up.grip) * (1 - (1 - AD.grip) * sl), turn: c.base.turn * (1 + 0.04 * c.up.grip) * (1 + (AD.turn - 1) * sl) };
+    grip: c.base.grip * (1 + PK.T.per * c.up.grip) * (1 - (1 - AD.grip) * sl) * (c.oilT > 0 ? 0.3 : 1), turn: c.base.turn * (1 + 0.04 * c.up.grip) * (1 + (AD.turn - 1) * sl) };
 };
 
+
+// ---- stunt pieces: boost pads, oil slicks, jumps (track maker / story / drift trials / daily 'Stunt') and bridges (scenery over the road) ----
+function nearIdx(T, x, y) { let best = 0, bd = 1e18; for (let i = 0; i < T.N; i += 2) { const d = (T.X[i] - x) ** 2 + (T.Y[i] - y) ** 2; if (d < bd) { bd = d; best = i; } } return best; }
+function buildStunts(race, opts) {
+  const T = race.T, L = [];
+  const add = (k, i, off) => { const h = T.H[i], nx = Math.cos(h), ny = Math.sin(h); L.push({ k, x: T.X[i] + nx * (off || 0), y: T.Y[i] + ny * (off || 0), h, i }); };
+  for (const [key, k] of [['boostAt', 'boost'], ['oilAt', 'oil'], ['jumpAt', 'jump'], ['bridgeAt', 'bridge']]) if (T.items && T.items[key]) T.items[key].forEach(p => { const i = nearIdx(T, p[0], p[1]); L.push({ k, x: p[0], y: p[1], h: T.H[i], i }); });
+  const A = opts.autoStunts;
+  if (A) {   // place pieces on the track's own straights / corners
+    const N = T.N, k = Math.max(2, Math.round(40 / T.step)), bend = new Float32Array(N);
+    for (let i = 0; i < N; i++) bend[i] = Math.abs(wrapA(T.H[(i + k) % N] - T.H[(i - k + N) % N]));
+    const runs = []; let i0 = -1;
+    for (let j = 0; j < N + 1; j++) { const st = j < N && bend[j] < 0.08; if (st && i0 < 0) i0 = j; if (!st && i0 >= 0) { runs.push([i0, j - 1]); i0 = -1; } }
+    runs.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
+    const len = r => (r[1] - r[0]) * T.step, startGap = Math.round(250 / T.step), ok = i => i > startGap && i < N - startGap;
+    let n = 0;
+    for (const r of runs) { if (len(r) < 260) break; const m = Math.round(r[0] + (r[1] - r[0]) * 0.5), q = Math.round(r[0] + (r[1] - r[0]) * 0.2);
+      if (n < (A.jump || 0) && len(r) > 330 && ok(m)) { add('jump', m); n++; if (A.boost && ok(q)) add('boost', q); continue; }
+      if (A.boost && L.filter(s => s.k === 'boost').length < A.boost && ok(q)) add('boost', q, (L.length % 2 ? 1 : -1) * T.W * 0.18); }
+    if (A.bridge) runs.slice(0, A.bridge).forEach(r => { const m = Math.round(r[0] + (r[1] - r[0]) * 0.75); if (ok(m)) add('bridge', m); });
+    if (A.oil) { const corners = []; for (let j = startGap; j < N - startGap; j += 4) if (bend[j] > 0.7) corners.push(j); for (let c = 0; c < A.oil && corners.length; c++) add('oil', corners[(c * 7919) % corners.length], (c % 2 ? 1 : -1) * T.W * 0.15); }
+  }
+  race.stunts = L;
+}
+function stepStunts(race, c, dt) {
+  if (c.padCool > 0) c.padCool -= dt; if (c.oilCool > 0) c.oilCool -= dt; if (c.oilT > 0) c.oilT -= dt;
+  if (!race.stunts || !race.stunts.length || c.air > 0) return;
+  for (const s of race.stunts) {
+    if (s.k === 'bridge') continue;
+    const dx = c.x - s.x, dy = c.y - s.y, along = dx * Math.sin(s.h) - dy * Math.cos(s.h), lat = dx * Math.cos(s.h) + dy * Math.sin(s.h);
+    if (s.k === 'jump' ? (Math.abs(along) > 12 || Math.abs(lat) > race.T.W / 2) : (dx * dx + dy * dy > 18 * 18)) continue;
+    const v = Math.hypot(c.vx, c.vy);
+    if (s.k === 'boost' && !(c.padCool > 0)) { const st = RR.carStats(c), nv = Math.min(st.top * 1.45, v + 130), k = v > 1 ? nv / v : 0; if (k) { c.vx *= k; c.vy *= k; } else { c.vx = Math.sin(c.a) * nv; c.vy = -Math.cos(c.a) * nv; } c.padCool = 0.7; race.events.push({ type: 'boostPad', car: c }); }
+    else if (s.k === 'oil' && !(c.oilCool > 0)) { c.oilT = 1.0; c.oilCool = 1.2; c.av += (Math.random() - 0.5) * 3; race.events.push({ type: 'oil', car: c }); }
+    else if (s.k === 'jump' && v > 110 && !(c.padCool > 0)) { c.air = c.airMax = 0.35 + Math.min(0.45, v / 700); c.padCool = 1; race.events.push({ type: 'jump', car: c }); }
+  }
+}
+RR.buildStunts = buildStunts;
 // Drift Trials scoring: points while sliding (speed x angle), multiplier grows the longer you chain drifts; a short break keeps the chain
 function driftScore(race, c, slip, v, dt) {
   const D = race.drift, DS = RR.DRIFT_SCORE, a = Math.abs(slip);
@@ -1601,6 +1640,8 @@ function stepCar(race, c, dt) {
   // the tyres allow (lateral grip / speed), so a held turn at speed becomes a slide on its own (~0.3 s in), grows
   // ~75 deg/s and settles near 65 deg; on release the nose stops and travel catches up quickly (slide ends ~0.3 s).
   const H = RR.HANDLE, P = RR.PHYS;
+  stepStunts(race, c, dt);
+  if (c.air > 0) { c.air -= dt; c.x += c.vx * dt; c.y += c.vy * dt; c.a = wrapA(c.a + c.av * dt * 0.5); resolveWalls(race, c); if (c.air <= 0) race.events.push({ type: 'land', car: c }); return; }
   let v = Math.hypot(c.vx, c.vy), th = v > 1e-3 ? Math.atan2(c.vx, -c.vy) : c.a;
   // brake / reverse (players): brakes while rolling forward, then backs up slowly; steering is mirrored going backwards
   const RV = RR.REVERSE;
@@ -2115,7 +2156,7 @@ const store = {
 };
 const newId = () => 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const blank = () => ({ id: newId(), name: 'My Track', w: 112, pts: [[3, 9], [3, 3], [18, 3], [18, 9]], cuts: [], theme: 'grass', time: 'day', laps: 3, bots: 7, diff: 'normal', auto: true,
-  treeAt: [], umbAt: [], coneAt: [], pickAt: [], lampAt: [], seed: (Math.random() * 1e6) | 0 });
+  treeAt: [], umbAt: [], coneAt: [], pickAt: [], lampAt: [], boostAt: [], oilAt: [], jumpAt: [], bridgeAt: [], seed: (Math.random() * 1e6) | 0 });
 // what the game builds from a saved track
 function playDef(d) {
   const p = { name: d.name, w: d.w, pts: d.pts, cuts: d.cuts || [], theme: d.theme, time: d.time, laps: d.laps, bots: d.bots, diff: d.diff, seed: d.seed || 0 };
@@ -2125,6 +2166,7 @@ function playDef(d) {
     p.trees = Math.round(6 + mx * my / 16); p.umb = 5;
     if (has('treeAt')) p.treeAt = d.treeAt; if (has('umbAt')) p.umbAt = d.umbAt; if (has('coneAt')) p.coneAt = d.coneAt; if (has('lampAt')) p.lampAt = d.lampAt;
   } else { p.trees = 0; p.umb = 0; p.treeAt = d.treeAt || []; p.umbAt = d.umbAt || []; p.coneAt = d.coneAt || []; p.lampAt = d.lampAt || []; }
+  ['boostAt', 'oilAt', 'jumpAt', 'bridgeAt'].forEach(k => p[k] = d[k] || []);
   if (has('pickAt')) p.pickAt = d.pickAt;
   return p;
 }
@@ -2158,18 +2200,19 @@ async function zip(b, un) { return new Uint8Array(await new Response(new Blob([b
 function packBin(d) {
   const o = [], q = v => Math.max(0, Math.min(255, Math.round(v * 4))), h = v => Math.max(0, Math.min(255, Math.round(v * 2)));
   const name = new TextEncoder().encode((d.name || 'Track').slice(0, 40)), themes = Object.keys(RR.THEMES);
-  o.push(2, name.length, ...name, Math.min(255, d.w | 0), Math.max(0, themes.indexOf(d.theme)),
+  o.push(3, name.length, ...name, Math.min(255, d.w | 0), Math.max(0, themes.indexOf(d.theme)),
     Math.max(0, TIMES_K.indexOf(d.time || 'day')) | (Math.max(0, DIFF_K.indexOf(d.diff || 'normal')) << 2) | (d.auto ? 16 : 0),
     (Math.min(15, d.laps | 0) << 4) | Math.min(15, d.bots | 0), (d.seed >> 16) & 255, (d.seed >> 8) & 255, d.seed & 255);
   o.push(d.pts.length); d.pts.forEach(p => o.push(h(p[0]), h(p[1])));
   const cuts = d.cuts || []; o.push(cuts.length); cuts.forEach(c => { o.push(c.length); c.forEach(p => o.push(h(p[0]), h(p[1]))); });
   const list = (L, extra) => { L = L || []; o.push(Math.min(255, L.length)); L.slice(0, 255).forEach(p => { o.push(q(p[0]), q(p[1])); if (extra) o.push(extra(p)); }); };
   list(d.treeAt, p => (p[2] | 0) & 255); list(d.umbAt, p => (p[2] | 0) & 255); list(d.coneAt); list(d.pickAt, p => p[2] ? String(p[2]).charCodeAt(0) & 255 : 0); list(d.lampAt);
+  list(d.boostAt); list(d.oilAt); list(d.jumpAt); list(d.bridgeAt);
   return new Uint8Array(o);
 }
 function unpackBin(b) {
   let i = 0; const r = () => { if (i >= b.length) throw new Error('short'); return b[i++]; };
-  if (r() !== 2) throw new Error('version');
+  const ver = r(); if (ver !== 2 && ver !== 3) throw new Error('version');
   const n = r(), name = new TextDecoder().decode(b.slice(i, i + n)); i += n;
   const d = { name, w: r(), theme: Object.keys(RR.THEMES)[r()] || 'grass' };
   const f = r(); d.time = TIMES_K[f & 3] || 'day'; d.diff = DIFF_K[(f >> 2) & 3] || 'normal'; d.auto = !!(f & 16);
@@ -2179,6 +2222,7 @@ function unpackBin(b) {
   d.cuts = []; for (let k = r(); k > 0; k--) { const c = []; for (let m = r(); m > 0; m--) c.push(pt()); d.cuts.push(c); }
   const list = extra => { const L = []; for (let k = r(); k > 0; k--) { const p = it(); if (extra) p.push(extra(r())); L.push(p); } return L; };
   d.treeAt = list(v => v); d.umbAt = list(v => v); d.coneAt = list(); d.pickAt = list(v => v ? String.fromCharCode(v) : ''); d.lampAt = list();
+  if (ver >= 3) { d.boostAt = list(); d.oilAt = list(); d.jumpAt = list(); d.bridgeAt = list(); } else { d.boostAt = []; d.oilAt = []; d.jumpAt = []; d.bridgeAt = []; }
   return d;
 }
 async function packCode(d) {
@@ -2262,6 +2306,10 @@ function drawTrack(x, d, opt) {
   const icon = (list, f) => (list || []).forEach(p => { const w = RR.toWorld(p); f(w[0], w[1], p[2]); });
   icon(d.treeAt, (px, py) => { x.fillStyle = d.theme === 'desert' ? '#4d8a3a' : d.theme === 'autumn' ? '#d0621e' : d.theme === 'snow' ? '#2c6a40' : '#2f8d3a'; x.beginPath(); x.arc(px, py, 26, 0, 7); x.fill(); x.strokeStyle = 'rgba(0,0,0,0.4)'; x.lineWidth = 3; x.stroke(); });
   icon(d.umbAt, (px, py, t) => { for (let k = 0; k < 8; k++) { x.fillStyle = k % 2 ? '#fff' : (t === 0 ? '#e83a24' : '#2a6ee0'); x.beginPath(); x.moveTo(px, py); x.arc(px, py, 22, k * 0.785, (k + 1) * 0.785); x.fill(); } });
+  icon(d.boostAt, (px, py) => { x.fillStyle = '#222'; x.fillRect(px - 14, px * 0 + py - 16, 28, 32); x.strokeStyle = '#ffb020'; x.lineWidth = 4; for (let k = 0; k < 2; k++) { x.beginPath(); x.moveTo(px - 9, py + 6 - k * 10); x.lineTo(px, py - 2 - k * 10); x.lineTo(px + 9, py + 6 - k * 10); x.stroke(); } });
+  icon(d.oilAt, (px, py) => { x.fillStyle = '#1a1622'; x.beginPath(); x.ellipse(px, py, 16, 12, 0.4, 0, 7); x.fill(); x.strokeStyle = '#b07aff'; x.lineWidth = 2; x.beginPath(); x.ellipse(px - 2, py - 2, 8, 5, 0.4, 0, 7); x.stroke(); });
+  icon(d.jumpAt, (px, py) => { x.fillStyle = '#c89858'; x.fillRect(px - 18, py - 12, 36, 24); x.fillStyle = '#ffcf20'; x.fillRect(px - 18, py - 12, 36, 5); x.fillStyle = '#fff'; x.beginPath(); x.moveTo(px, py - 4); x.lineTo(px + 7, py + 6); x.lineTo(px - 7, py + 6); x.fill(); });
+  icon(d.bridgeAt, (px, py) => { x.fillStyle = 'rgba(140,130,115,0.9)'; x.fillRect(px - 60, py - 14, 120, 28); x.fillStyle = '#ddd5c0'; for (let k = -60; k < 60; k += 10) { x.fillRect(px + k, py - 15, 3, 4); x.fillRect(px + k, py + 11, 3, 4); } });
   icon(d.coneAt, (px, py) => { x.fillStyle = '#e06a2a'; x.beginPath(); x.arc(px, py, 6, 0, 7); x.fill(); x.fillStyle = '#fff'; x.beginPath(); x.arc(px, py, 2.5, 0, 7); x.fill(); });
   icon(d.pickAt, (px, py, t) => { x.fillStyle = PK_COL[t || 'R'] || PK_COL.R; x.beginPath(); x.arc(px, py, 12, 0, 7); x.fill(); x.strokeStyle = '#fff'; x.lineWidth = 2.5; x.stroke(); if (opt.labels) { x.fillStyle = '#fff'; x.font = 'bold 14px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(t || '?', px, py + 1); } });
   icon(d.lampAt, (px, py) => { const g = x.createRadialGradient(px, py, 0, px, py, 34); g.addColorStop(0, 'rgba(255,230,150,0.9)'); g.addColorStop(1, 'rgba(255,230,150,0)'); x.fillStyle = g; x.beginPath(); x.arc(px, py, 34, 0, 7); x.fill(); x.fillStyle = '#fff6c0'; x.beginPath(); x.arc(px, py, 5, 0, 7); x.fill(); });
@@ -2364,29 +2412,43 @@ async function shareTrack(t, redraw) {
     });
 }
 function shortBox(id) { return '<p style="margin:0 0 4px;color:#ffc8b8;font-size:13px">Your track is online! Its code:</p><div style="font:bold 34px \'Trebuchet MS\',sans-serif;color:#ffcf40;letter-spacing:2px">#' + id + '</div><p style="margin:2px 0 6px;color:#ffc8b8;font-size:12px">Friends type it in <b>Paste a track code</b>, or find it in <b>Browse online tracks</b>. Turn Online off or delete the track and the code is freed.</p><button class="rr-b blue" id="cps">Copy #' + id + '</button>'; }
+const save0 = () => (RR.test && RR.test.save ? RR.test.save() : {});
 function browseOnline(redraw) {
-  pop('<h3 style="margin:0 0 6px">Online tracks</h3><div style="display:flex;gap:6px;margin-bottom:6px"><button class="rr-b blue" id="tn">Newest</button><button class="rr-b" id="tp">Most played</button><span style="flex:1"></span><button class="rr-b" id="x">Close</button></div>' +
+  const tabs = [['f', 'Featured'], ['n', 'Newest'], ['p', 'Most played'], ['l', 'Most liked']];
+  pop('<h3 style="margin:0 0 6px">Online tracks</h3><div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">' + tabs.map(t => '<button class="rr-b" data-o="' + t[0] + '">' + t[1] + '</button>').join('') + '<span style="flex:1"></span><button class="rr-b" id="x">Close</button></div>' +
     '<div id="ol" style="max-height:min(60vh,420px);overflow:auto"></div>', (p, close) => {
       p.querySelector('#x').onclick = close;
-      const show = order => {
+      let liked = new Set();
+      api('rpc/my_likes', { p_dev: RR.game.devId() }).then(l => { liked = new Set((l || []).map(Number)); }).catch(() => {});
+      const show = o => {
         const ol = p.querySelector('#ol'); ol.innerHTML = '<p style="color:#ffcf40">Loading...</p>';
-        p.querySelector('#tn').className = 'rr-b ' + (order === 'created_at' ? 'blue' : ''); p.querySelector('#tp').className = 'rr-b ' + (order === 'plays' ? 'blue' : '');
-        api('tracks?select=id,name,author,theme,plays&order=' + order + '.desc&limit=40').then(rows => {
+        p.querySelectorAll('[data-o]').forEach(b => b.className = 'rr-b ' + (b.dataset.o === o ? 'blue' : ''));
+        const q = { n: 'order=created_at.desc&limit=40', p: 'order=plays.desc&limit=40', l: 'order=likes.desc,plays.desc&limit=40',
+          f: 'order=likes.desc,plays.desc&limit=60' }[o];
+        api('tracks?select=id,name,author,theme,plays,likes,created_at&' + q).then(rows => {
+          if (o === 'f') { // featured: best liked + played, newer tracks get a head start
+            const now = Date.now(); rows.forEach(r => { const age = (now - new Date(r.created_at).getTime()) / 864e5; r.sc = (r.likes * 3 + Math.sqrt(r.plays)) / Math.pow(age + 2, 0.35); });
+            rows = rows.sort((a, b) => b.sc - a.sc).slice(0, 12);
+          }
           if (!rows.length) { ol.innerHTML = '<p style="color:#ffb0a0">No tracks shared yet. Share one of yours to be the first!</p>'; return; }
           ol.innerHTML = '';
-          rows.forEach(r => {
+          rows.forEach((r, i) => {
             const c = document.createElement('div'); c.className = 'rr-card'; c.style.marginBottom = '4px';
-            const th = RR.THEMES[r.theme] || RR.THEMES.grass;
-            c.innerHTML = '<div style="flex:1;min-width:0"><div class="nm">' + esc(r.name) + ' <span style="color:#ffcf40;font-size:12px">#' + r.id + '</span></div><div class="meta">by ' + esc(r.author) + ' · ' + th.name + ' · played ' + r.plays + 'x</div></div>';
+            const th = RR.THEMES[r.theme] || RR.THEMES.grass, star = o === 'f' && i < 3 ? '<span style="color:#ffcf40">&#9733; </span>' : '';
+            c.innerHTML = '<div style="flex:1;min-width:0"><div class="nm">' + star + esc(r.name) + ' <span style="color:#ffcf40;font-size:12px">#' + r.id + '</span></div><div class="meta">by ' + esc(r.author) + ' · ' + th.name + ' · played ' + r.plays + 'x</div></div>';
+            const lk = document.createElement('button'); lk.className = 'rr-b'; lk.title = 'Like this track';
+            const paint = () => { const on = liked.has(r.id); lk.innerHTML = (on ? '&#9829; ' : '&#9825; ') + r.likes; lk.style.color = on ? '#ff6080' : ''; };
+            paint();
+            lk.onclick = async () => { lk.disabled = true; try { const n = await api('rpc/like_track', { p_id: r.id, p_dev: RR.game.devId() }); if (n >= 0) { if (liked.has(r.id)) liked.delete(r.id); else { liked.add(r.id); if (!(save0().likedIds || []).includes(r.id)) { const sv = save0(); sv.likedIds = (sv.likedIds || []).concat([r.id]); RR.game.liked(); } } r.likes = n; } } catch (e) {} lk.disabled = false; paint(); };
             const b = document.createElement('button'); b.className = 'rr-b green'; b.textContent = 'Get + race';
             b.onclick = async () => { b.disabled = true; b.textContent = '...'; try { const t = await loadAnyCode('#' + r.id); const have = store.load().find(x => x.sharedId === r.id); if (have) Object.assign(t, { id: have.id }); store.put(t); close(); closeAll(); RR.game.playCustom(t, { from: 'list' }); } catch (e) { b.textContent = 'Failed'; } };
             const s = document.createElement('button'); s.className = 'rr-b blue'; s.textContent = 'Save';
             s.onclick = async () => { s.disabled = true; try { const t = await loadAnyCode('#' + r.id); if (!store.load().some(x => x.sharedId === r.id)) store.put(t); s.textContent = 'Saved!'; if (redraw) redraw(); } catch (e) { s.textContent = 'Failed'; } };
-            c.appendChild(b); c.appendChild(s); ol.appendChild(c);
+            c.appendChild(lk); c.appendChild(b); c.appendChild(s); ol.appendChild(c);
           });
         }).catch(e => { ol.innerHTML = '<p style="color:#ffb0a0">' + esc((e && e.msg) || 'Could not load tracks.') + '</p>'; });
       };
-      p.querySelector('#tn').onclick = () => show('created_at'); p.querySelector('#tp').onclick = () => show('plays'); show('created_at');
+      p.querySelectorAll('[data-o]').forEach(b => b.onclick = () => show(b.dataset.o)); show('f');
     });
 }
 function closeAll() { ['rr-tl', 'rr-ed'].forEach(id => { const e = document.getElementById(id); if (e) e.remove(); }); document.querySelectorAll('.rr-pop').forEach(p => p.remove()); if (ED.raf) cancelAnimationFrame(ED.raf); ED.raf = 0; }
@@ -2395,11 +2457,11 @@ const ED = {};
 const TOOLS = [['road', 'Road', 'Click to add a corner (on a road to split it). Drag corners to move them. Right-click a corner to remove it.'], ['cut', 'Shortcut', 'Click on the road to start a dirt shortcut, click to bend it, click on the road again to finish. Esc cancels.'],
   ['tree', 'Tree', 'Click to plant a tree (the kind matches the terrain). Trees are drawn over the cars but are not solid.'], ['umb', 'Umbrella', 'Click to place a red/white umbrella. Click again with a blue one selected for blue.'],
   ['cone', 'Cone', 'Click to place a cone (cars knock them about).'], ['pick', 'Pickup', 'Choose a pickup type below, then click on the road to place it. "?" = random each time.'],
-  ['lamp', 'Light', 'Click to place a street light (lights up night races).'], ['erase', 'Eraser', 'Click on anything to remove it.'], ['pan', 'Move view', 'Drag to move around. Mouse wheel (or + / -) zooms.']];
+  ['lamp', 'Light', 'Click to place a street light (lights up night races).'], ['boost', 'Boost pad', 'Click on the road: cars that drive over it get a burst of speed.'], ['oil', 'Oil slick', 'Click on the road: cars that hit it lose grip and slide for a moment.'], ['jump', 'Jump', 'Click on a straight: fast cars fly over it (place it where there is room to land).'], ['bridge', 'Bridge', 'Click on the road: a bridge crosses over the track (cars drive under it).'], ['copy', 'Copy', 'Click two corners of a box around items to copy them, then click to paste copies.'], ['erase', 'Eraser', 'Click on anything to remove it.'], ['pan', 'Move view', 'Drag to move around. Mouse wheel (or + / -) zooms.']];
 function edit(def) {
   css(); closeAll();
   const d = JSON.parse(JSON.stringify(def));
-  ['cuts', 'treeAt', 'umbAt', 'coneAt', 'pickAt', 'lampAt'].forEach(k => d[k] = d[k] || []);
+  ['cuts', 'treeAt', 'umbAt', 'coneAt', 'pickAt', 'lampAt', 'boostAt', 'oilAt', 'jumpAt', 'bridgeAt'].forEach(k => d[k] = d[k] || []);
   Object.assign(ED, { d, tool: 'road', pk: 'R', umb: 0, undo: [], redo: [], drag: null, cut: null, hover: null, dirty: true, saved: JSON.stringify(d) });
   const root = document.createElement('div'); root.id = 'rr-ed'; document.body.appendChild(root);
   const opt = (o, v) => Object.keys(o).map(k => '<option value="' + k + '"' + (k === v ? ' selected' : '') + '>' + o[k] + '</option>').join('');
@@ -2415,7 +2477,7 @@ function edit(def) {
     '<label><span>Skill</span><select id="df">' + opt({ easy: 'Easy', normal: 'Normal', hard: 'Hard' }, d.diff) + '</select></label>' +
     '<label title="Adds trees, umbrellas, cones and (at night) street lights automatically wherever you didn\'t place your own"><input type="checkbox" id="au"' + (d.auto ? ' checked' : '') + '><span>Auto scenery</span></label>' +
     '<span style="flex:1"></span>' +
-    '<button class="rr-b" id="un" title="Undo (Ctrl+Z)">Undo</button><button class="rr-b blue" id="td">Test drive</button><button class="rr-b green" id="rc">Race bots</button><button class="rr-b" id="sv">Save</button></div>' +
+    '<button class="rr-b" id="un" title="Undo (Ctrl+Z)">Undo</button><button class="rr-b" id="re" title="Redo (Ctrl+Y)">Redo</button><button class="rr-b blue" id="td">Test drive</button><button class="rr-b green" id="rc">Race bots</button><button class="rr-b" id="sv">Save</button></div>' +
     '<div class="mid"><div class="tools">' + TOOLS.map(t => '<button class="rr-b tool" data-t="' + t[0] + '">' + t[1] + '</button>').join('') +
     '<div class="pk">' + ['S', 'A', 'T', 'N', 'R'].map(k => '<button class="rr-b rr-ed-pk" data-p="' + k + '" style="background:' + PK_COL[k] + '">' + (k === 'R' ? '?' : k) + '</button>').join('') + '</div>' +
     '<div class="pk"><button class="rr-b rr-ed-pk" data-u="0" style="background:#e83a24">Red</button><button class="rr-b rr-ed-pk" data-u="1" style="background:#2a6ee0">Blue</button></div>' +
@@ -2424,8 +2486,8 @@ function edit(def) {
     '<div class="status"></div>';
   const $ = s => root.querySelector(s), cv = $('canvas.ed'), x = cv.getContext('2d'), status = $('.status');
   ED.cv = cv; ED.x = x;
-  const push = () => { ED.undo.push(JSON.stringify(ED.d)); if (ED.undo.length > 60) ED.undo.shift(); ED.dirty = true; };
-  const setTool = t => { ED.tool = t; ED.cut = null; ED.startPick = false; root.querySelectorAll('.tool').forEach(b => b.classList.toggle('on', b.dataset.t === t)); ED.dirty = true; };
+  const push = () => { ED.undo.push(JSON.stringify(ED.d)); if (ED.undo.length > 60) ED.undo.shift(); ED.redo = []; ED.dirty = true; };
+  const setTool = t => { ED.tool = t; ED.cut = null; ED.startPick = false; ED.selA = null; if (t !== 'copy') ED.clip = null; root.querySelectorAll('.tool').forEach(b => b.classList.toggle('on', b.dataset.t === t)); ED.dirty = true; };
   setTool('road');
   root.querySelectorAll('.tool').forEach(b => b.onclick = () => setTool(b.dataset.t));
   root.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { ED.pk = b.dataset.p; setTool('pick'); refreshPk(); });
@@ -2435,9 +2497,10 @@ function edit(def) {
   const bind = (id, key, conv) => { $(id).oninput = $(id).onchange = () => { const v = conv($(id).type === 'checkbox' ? $(id).checked : $(id).value); if (ED.d[key] !== v) { push(); ED.d[key] = v; } }; };
   bind('#nm', 'name', v => String(v).slice(0, 24) || 'My Track'); bind('#th', 'theme', v => v); bind('#tm', 'time', v => v); bind('#w', 'w', v => +v);
   bind('#lp', 'laps', v => +v); bind('#bt', 'bots', v => +v); bind('#df', 'diff', v => v); bind('#au', 'auto', v => !!v);
-  const undo = () => { if (!ED.undo.length) return; ED.d = JSON.parse(ED.undo.pop()); syncInputs(); ED.dirty = true; };
+  const undo = () => { if (!ED.undo.length) return; ED.redo.push(JSON.stringify(ED.d)); ED.d = JSON.parse(ED.undo.pop()); syncInputs(); ED.dirty = true; };
+  const redo = () => { if (!ED.redo.length) return; ED.undo.push(JSON.stringify(ED.d)); ED.d = JSON.parse(ED.redo.pop()); syncInputs(); ED.dirty = true; };
   const syncInputs = () => { $('#nm').value = ED.d.name; $('#th').value = ED.d.theme; $('#tm').value = ED.d.time; $('#w').value = ED.d.w; $('#lp').value = ED.d.laps; $('#bt').value = ED.d.bots; $('#df').value = ED.d.diff; $('#au').checked = ED.d.auto; };
-  $('#un').onclick = undo;
+  $('#un').onclick = undo; $('#re').onclick = redo;
   const doSave = () => { if (!store.put(JSON.parse(JSON.stringify(ED.d)))) { flash('Could not save (storage full?)'); return false; } ED.saved = JSON.stringify(ED.d); flash('Saved "' + ED.d.name + '"'); return true; };
   $('#sv').onclick = doSave;
   const play = bots => { const c = check(ED.d); if (c.errs.length) { flash(c.errs[0], true); return; } doSave(); const t = JSON.parse(JSON.stringify(ED.d)); closeAll(); RR.game.playCustom(t, { from: 'editor', test: bots === 0 }); };
@@ -2449,7 +2512,7 @@ function edit(def) {
   };
   $('#rv').onclick = () => { push(); const p = ED.d.pts; ED.d.pts = [p[0]].concat(p.slice(1).reverse()); };
   $('#st').onclick = () => { setTool('road'); ED.startPick = true; flash('Click a stretch of road: the start line goes there.'); };
-  $('#cl').onclick = () => { push(); ['treeAt', 'umbAt', 'coneAt', 'pickAt', 'lampAt', 'cuts'].forEach(k => ED.d[k] = []); };
+  $('#cl').onclick = () => { push(); ['treeAt', 'umbAt', 'coneAt', 'pickAt', 'lampAt', 'boostAt', 'oilAt', 'jumpAt', 'bridgeAt', 'cuts'].forEach(k => ED.d[k] = []); };
   // view: grid units -> screen pixels
   const fit = () => { const r = cv.getBoundingClientRect(); let mx = 0, my = 0, nx = 1e9, ny = 1e9; ED.d.pts.forEach(p => { mx = Math.max(mx, p[0]); my = Math.max(my, p[1]); nx = Math.min(nx, p[0]); ny = Math.min(ny, p[1]); });
     nx = Math.max(0, nx - 2); ny = Math.max(0, ny - 2); mx = Math.min(MAXX, mx + 2); my = Math.min(MAXY, my + 2);
@@ -2484,9 +2547,19 @@ function edit(def) {
       if (!ED.cut) { if (!onRoad(g)) { flash('Start a shortcut on the road.', true); return; } ED.cut = [q]; }
       else { ED.cut.push(q); if (onRoad(g) && ED.cut.length >= 2) { push(); D.cuts.push(ED.cut); ED.cut = null; flash('Shortcut added (it becomes a dirt lane with a rail on both sides).'); } }
     } else if (T === 'erase') {
-      for (const k of ['pickAt', 'coneAt', 'lampAt', 'umbAt', 'treeAt']) { const i = near(D[k], g, k === 'treeAt' || k === 'umbAt' ? 0.3 : 0.18); if (i >= 0) { push(); D[k].splice(i, 1); return; } }
+      for (const k of ['pickAt', 'coneAt', 'boostAt', 'oilAt', 'jumpAt', 'lampAt', 'umbAt', 'treeAt', 'bridgeAt']) { const i = near(D[k], g, k === 'treeAt' || k === 'umbAt' || k === 'bridgeAt' ? 0.3 : 0.2); if (i >= 0) { push(); D[k].splice(i, 1); return; } }
       for (let c = 0; c < D.cuts.length; c++) if (D.cuts[c].some((q, j) => j && segDist(D.cuts[c][j - 1], q, g) < 0.35)) { push(); D.cuts.splice(c, 1); return; }
       const i = near(D.pts, g, rad); if (i >= 0 && D.pts.length > 3) { push(); D.pts.splice(i, 1); }
+    } else if (T === 'copy') {   // two clicks = a box; then each click pastes the copied items
+      const q = clampG([snap(g[0], 0.05), snap(g[1], 0.05)]);
+      if (ED.clip && !ED.selA) { push(); const c = ED.clip; for (const k in c.items) c.items[k].forEach(p => D[k].push([+(q[0] + p[0]).toFixed(2), +(q[1] + p[1]).toFixed(2)].concat(p.slice(2)))); flash('Pasted ' + c.n + ' item' + (c.n > 1 ? 's' : '') + '. Click again to paste more, or pick another tool.'); ED.dirty = true; return; }
+      if (!ED.selA) { ED.selA = q; flash('Now click the other corner of the box.'); return; }
+      const a = ED.selA, x0 = Math.min(a[0], q[0]), x1 = Math.max(a[0], q[0]), y0 = Math.min(a[1], q[1]), y1 = Math.max(a[1], q[1]), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      const clip = { items: {}, n: 0 };
+      for (const k of ['treeAt', 'umbAt', 'coneAt', 'pickAt', 'lampAt', 'boostAt', 'oilAt', 'jumpAt', 'bridgeAt']) (D[k] || []).forEach(p => { if (p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1) { (clip.items[k] = clip.items[k] || []).push([p[0] - cx, p[1] - cy].concat(p.slice(2))); clip.n++; } });
+      ED.selA = null; ED.selBox = [x0, y0, x1, y1];
+      if (!clip.n) { ED.clip = null; flash('Nothing inside that box - try again.', true); return; }
+      ED.clip = clip; flash('Copied ' + clip.n + ' item' + (clip.n > 1 ? 's' : '') + '. Click anywhere to paste copies.'); ED.dirty = true; return;
     } else {
       const q = clampG([snap(g[0], 0.05), snap(g[1], 0.05)]);
       push();
@@ -2495,6 +2568,7 @@ function edit(def) {
       else if (T === 'cone') D.coneAt.push(q);
       else if (T === 'pick') D.pickAt.push([q[0], q[1], ED.pk === 'R' ? '' : ED.pk]);
       else if (T === 'lamp') D.lampAt.push(q);
+      else if (T === 'boost' || T === 'oil' || T === 'jump' || T === 'bridge') { if (!onRoad(q)) { ED.undo.pop(); flash('Put that on the road.', true); return; } D[T + 'At'].push(q); }
       if (T === 'tree' || T === 'umb' || T === 'lamp') { const w = RR.toWorld(q), sh = RR.trackShape(D); if (sh && onRoad(q)) flash('Tip: trees, umbrellas and lights look best off the road (they are not solid).'); }
     }
     ED.dirty = true;
@@ -2510,9 +2584,10 @@ function edit(def) {
   ED.key = e => {
     if (!document.getElementById('rr-ed') || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName)) return;
     if (e.key === 'Escape') { if (ED.cut) { ED.cut = null; ED.dirty = true; } else setTool('road'); }
+    else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || e.shiftKey && e.key.toLowerCase() === 'z')) { e.preventDefault(); redo(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
     else if (e.key === '+' || e.key === '=') zoom(1.2); else if (e.key === '-') zoom(1 / 1.2);
-    else { const t = { 1: 'road', 2: 'cut', 3: 'tree', 4: 'umb', 5: 'cone', 6: 'pick', 7: 'lamp', 8: 'erase', 9: 'pan' }[e.key]; if (t) setTool(t); }
+    else { const t = { 1: 'road', 2: 'cut', 3: 'tree', 4: 'umb', 5: 'cone', 6: 'pick', 7: 'lamp', 8: 'erase', 9: 'pan', b: 'boost', o: 'oil', j: 'jump', g: 'bridge', c: 'copy' }[e.key]; if (t) setTool(t); }
     e.stopPropagation();
   };
   root.addEventListener('keydown', e => e.stopPropagation());
@@ -2542,6 +2617,7 @@ function edit(def) {
     if (D.time === 'night') { x.setTransform(dpr, 0, 0, dpr, 0, 0); x.fillStyle = 'rgba(10,15,50,0.25)'; x.fillRect(ED.ox, ED.oy, MAXX * ED.s, MAXY * ED.s); }
     // corner handles (green = start corner)
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (ED.tool === 'copy' && ED.selA && ED.mouse) { const a = ED.selA, b = ED.mouse; x.strokeStyle = '#40d8ff'; x.setLineDash([6, 4]); x.lineWidth = 2; x.strokeRect(ED.ox + Math.min(a[0], b[0]) * ED.s, ED.oy + Math.min(a[1], b[1]) * ED.s, Math.abs(b[0] - a[0]) * ED.s, Math.abs(b[1] - a[1]) * ED.s); x.setLineDash([]); }
     D.pts.forEach((q, i) => { const px = ED.ox + q[0] * ED.s, py = ED.oy + q[1] * ED.s;
       x.fillStyle = i === 0 ? '#3cdc4a' : '#ffcf40'; x.strokeStyle = '#000'; x.lineWidth = 2; x.beginPath(); x.arc(px, py, ED.tool === 'road' ? 7 : 4, 0, 7); x.fill(); x.stroke();
       if (ED.tool === 'road') { x.fillStyle = '#000'; x.font = 'bold 9px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(i + 1, px, py + 0.5); } });
@@ -2550,12 +2626,12 @@ function edit(def) {
     let html = performance.now() < flashT ? '<span class="' + (flashBad ? 'err' : 'warn') + '">' + esc(flashMsg) + '</span>' : esc(ED.startPick ? 'Click a stretch of road: the start line goes there.' : tip);
     if (chk.errs.length) html += ' &nbsp; <span class="err">' + esc(chk.errs[0]) + '</span>'; else if (chk.warn.length) html += ' &nbsp; <span class="warn">' + esc(chk.warn[0]) + '</span>';
     if (status.innerHTML !== html) status.innerHTML = html;
-    $('#un').disabled = !ED.undo.length;
+    $('#un').disabled = !ED.undo.length; $('#re').disabled = !ED.redo.length;
   };
   frame();
   setTimeout(fit, 30);
 }
-RR.Editor = { openList, edit, playDef, store, check, closeAll, packCode, unpackCode, css, view: () => ED };
+RR.Editor = { openList, edit, playDef, store, check, closeAll, packCode, unpackCode, css, view: () => ED, browse: () => { css(); browseOnline(); } };
 })();
 
 // Story mode visuals: anime portraits, animated backdrops and the cutscene player (+ the whole script).
@@ -2959,6 +3035,34 @@ RR.CHALLENGES = [
   { id: 'perfect', name: 'Gold Standard', desc: 'Get 3 stars on 10 races', goal: 10, stat: s => s.threeStars, decal: 'crown' },
   { id: 'veteran', name: 'Road Warrior', desc: 'Finish 50 races', goal: 50, stat: s => s.races, decal: 'tiger' },
 ];
+
+// ===== v1.8: tyre smoke colours and trails - earned ONLY by finishing these challenges (some are secret) =====
+RR.SMOKES = {
+  white: { name: 'White', rgb: '236,236,232' }, red: { name: 'Red', rgb: '255,70,60' }, blue: { name: 'Blue', rgb: '70,140,255' },
+  gold: { name: 'Gold', rgb: '255,205,60' }, purple: { name: 'Purple', rgb: '170,90,255' }, green: { name: 'Green', rgb: '80,230,110' },
+  pink: { name: 'Pink', rgb: '255,120,200' }, black: { name: 'Black', rgb: '46,44,50' }, ocean: { name: 'Ocean', rgb: '40,210,220' },
+  rainbow: { name: 'Rainbow', rainbow: true },
+};
+RR.SMOKE_ORDER = Object.keys(RR.SMOKES);
+RR.TRAILS = { none: { name: 'No trail' }, neon: { name: 'Neon' }, fire: { name: 'Fire' }, sparkle: { name: 'Sparkle' }, pixel: { name: 'Pixel' }, ghost: { name: 'Ghost' }, rainbow: { name: 'Rainbow' } };
+RR.TRAIL_ORDER = Object.keys(RR.TRAILS);
+RR.FX_CHALLENGES = [
+  { id: 'fx_jump', name: 'High Flyer', desc: 'Fly off 10 jumps', goal: 10, stat: s => s.jumps, smoke: 'red' },
+  { id: 'fx_pads', name: 'Pad Hopper', desc: 'Drive over 25 boost pads', goal: 25, stat: s => s.pads, trail: 'neon' },
+  { id: 'fx_daily', name: 'Daily Driver', desc: 'Finish 3 Daily Challenges', goal: 3, stat: s => s.dailies, smoke: 'blue' },
+  { id: 'fx_gold', name: 'Golden Laps', desc: 'Win 3 gold medals in Time Trial', goal: 3, stat: s => s.golds, smoke: 'gold' },
+  { id: 'fx_smoke', name: 'Smoke Show', desc: 'Drift for 3 minutes in total', goal: 180, stat: s => s.driftSec | 0, smoke: 'purple' },
+  { id: 'fx_air', name: 'Frequent Flyer', desc: 'Spend 15 seconds in the air', goal: 15, stat: s => s.airSec | 0, trail: 'sparkle' },
+  { id: 'fx_netwin', name: 'Wi-Fi Winner', desc: 'Win a Wi-Fi race against a real player', goal: 1, stat: s => s.netWins, trail: 'fire' },
+  { id: 'fx_club', name: 'Crew Up', desc: 'Start or join a Club', goal: 1, stat: s => s.club, smoke: 'green' },
+  { id: 'fx_likes', name: 'Crowd Pleaser', desc: 'Like 3 online tracks', goal: 3, stat: s => s.likes, smoke: 'pink' },
+  { id: 'fx_oil', name: 'Slick Survivor', desc: 'Win 3 races after sliding on oil', goal: 3, stat: s => s.oilWins, smoke: 'black' },
+  { id: 'fx_all', name: 'Completionist', desc: 'Finish all 12 decal challenges', goal: 12, stat: s => s.decalsDone, smoke: 'rainbow', trail: 'rainbow' },
+  { id: 'sx_code', name: 'Old School', desc: 'Enter the classic cheat code on the menu', hint: 'Up, up, down, down... (phone: tap the logo 7 times)', goal: 1, stat: s => s.konami, trail: 'pixel', hidden: true },
+  { id: 'sx_qwak', name: 'Quack Quack', desc: 'Finish a race named after the original game\'s creator', hint: 'Who made the 2012 original?', goal: 1, stat: s => s.qwak, smoke: 'ocean', hidden: true },
+  { id: 'sx_clean', name: 'Clean Sweep', desc: 'Win a race of 3+ laps without touching a wall', hint: 'Win without a scratch...', goal: 1, stat: s => s.cleanWins, trail: 'ghost', hidden: true },
+];
+RR.fxRewardName = c => c.smoke && c.trail && RR.SMOKES[c.smoke].name === RR.TRAILS[c.trail].name ? RR.SMOKES[c.smoke].name + ' smoke + trail' : [c.smoke && RR.SMOKES[c.smoke].name + ' smoke', c.trail && RR.TRAILS[c.trail].name + ' trail'].filter(Boolean).join(' + ');
 })();
 
 // Game shell: display, input, screens, HUD, save data, main loop, test hooks.
@@ -3031,7 +3135,7 @@ window.addEventListener('keydown', e => {
   const ae = document.activeElement; if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
   if (state.net && e.code === 'KeyT' && !keys[e.code]) { e.preventDefault(); chatType(); return; }
   if (state.net && !keys[e.code] && (e.code === 'KeyQ' || e.code === 'KeyE')) { sendChat(e.code === 'KeyQ' ? 'preset' : 'custom'); keys[e.code] = true; return; }
-  if (state.screen === 'race' && state.race && state.race.replay && !state.paused) { e.preventDefault(); if (e.code === 'ArrowLeft' || e.code === 'KeyA') replayCam(-1); else if (e.code === 'ArrowRight' || e.code === 'KeyD') replayCam(1); else if (e.code === 'Escape' || e.code === 'Enter' || e.code === 'Space' || e.code === 'Backspace') endReplay(); return; }
+  if (state.screen === 'race' && state.race && state.race.replay && !state.paused) { e.preventDefault(); if (e.code === 'ArrowLeft' || e.code === 'KeyA') replayCam(-1); else if (e.code === 'ArrowRight' || e.code === 'KeyD') replayCam(1); else if (e.code === 'KeyC') clipToggle(); else if (e.code === 'Escape' || e.code === 'Enter' || e.code === 'Space' || e.code === 'Backspace') endReplay(); return; }
   A.init(); A.setMusic(musicModeFor(state.screen));
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (!keys[e.code]) onPress(e.code);
@@ -3122,6 +3226,9 @@ function pointerDown(x, y) {
     if (inBox(x, y, TOUCH.song)) { A.stepSong(1); return; }
   }
   if (state.screen === 'cutscene' && state.cut && !state.notice) { if (x > VW - 70 && y < 22) endCut(); else state.cut.press(); return; }
+  if (state.photo && state.photo.hide && !state.notice) { state.photo.hide = false; return; }
+  if (state.spectate && state.screen === 'race' && !state.notice) { if (x < VW * 0.3) spectateSwitch(-1); else if (x > VW * 0.7) spectateSwitch(1); else spectateEnd(); return; }
+  if (!state.notice && !state.info && hitButton(x, y) < 0 && secretTap(x, y)) return;
   const i = hitButton(x, y);
   if (state.notice) { state.notice = null; return; }
   if (state.info) { state.info = false; A.play('back'); return; }
@@ -3147,7 +3254,8 @@ function updateTouches(list) {
 if (RR.MOBILE) {
   const tStart = e => {
     e.preventDefault();
-    if (state.screen === 'race' && state.race && state.race.replay && !state.paused) { const t = e.changedTouches[0], r = canvas.getBoundingClientRect(), fx = (t.clientX - r.left) / r.width; if (fx < 0.3) replayCam(-1); else if (fx > 0.7) replayCam(1); else endReplay(); return; }
+    if (state.screen === 'race' && state.race && state.race.replay && !state.paused) { const t = e.changedTouches[0], r = canvas.getBoundingClientRect(), fx = (t.clientX - r.left) / r.width, fy = (t.clientY - r.top) / r.height; if (fy < 0.14) clipToggle(); else if (fx < 0.3) replayCam(-1); else if (fx > 0.7) replayCam(1); else endReplay(); return; }
+    if (state.screen === 'race' && state.spectate && !state.notice) { const t = e.changedTouches[0], r = canvas.getBoundingClientRect(), fx = (t.clientX - r.left) / r.width; if (fx < 0.3) spectateSwitch(-1); else if (fx > 0.7) spectateSwitch(1); else spectateEnd(); return; }
     const racing = state.screen === 'race' && !state.paused && !state.notice && !state.info;
     for (const tch of e.changedTouches) {
       const [x, y] = clientToVirtual(tch.clientX, tch.clientY);
@@ -3234,7 +3342,7 @@ function offerTutorial() {   // once, on the first visit to the main menu
 // ---------------- your name (Options) ----------------
 function cleanName(s) { s = String(s || '').replace(/[^A-Za-z0-9 _.\-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 12); return s || null; }
 function myName() { return cleanName(save.playerName); }
-function pname(id) { const p = (NET.rosterList || []).find(p => p.id === id) || (NET.roster && NET.roster[id]); return (p && cleanName(p.name)) || 'P' + (id + 1); }
+function pname(id) { const p = (NET.rosterList || []).find(p => p.id === id) || (NET.roster && NET.roster[id]); return ((p && cleanName(p.name)) || 'P' + (id + 1)) + (p && typeof p.club === 'string' && /^[A-Z0-9]{2,4}$/.test(p.club) ? ' [' + p.club + ']' : ''); }
 function textPrompt(titleTxt, info, value, onOk) {
   RR.Editor.css(); const d = document.createElement('div'); d.id = 'rr-idea';
   d.style.cssText = 'position:fixed;inset:0;z-index:70;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;font-family:"Trebuchet MS",sans-serif';
@@ -3248,9 +3356,46 @@ function askName() {
   textPrompt('Your name', 'Shown in results, leaderboards, Wi-Fi rooms and chat. Letters, numbers, spaces, _ . - (max 12). Leave empty to stay anonymous.', myName() || '',
     v => { save.playerName = cleanName(v); persist(); try { Object.keys(save.lb || {}).filter(k => /^[rds]\d+$/.test(k) && save.lb[k][0]).forEach(k => lbSubmit(k, save.lb[k][0].v)); } catch (e) {} toast(myName() ? 'Name set: ' + myName() : 'Name cleared - you are anonymous'); });
 }
+
+// ---------------- stunt pieces ----------------
+function drawStunts(race, inView, over) {
+  const t = performance.now() / 1000;
+  for (const s of race.stunts) {
+    if (!inView(s.x, s.y, 90)) continue;
+    if ((s.k === 'bridge') !== over) continue;
+    ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.h);   // local x = across the road, -y = forward
+    if (s.k === 'boost') {
+      ctx.fillStyle = 'rgba(20,20,30,0.75)'; roundRect(ctx, -13, -15, 26, 30, 4); ctx.fill();
+      for (let k = 0; k < 3; k++) { const ph = (t * 3 + k / 3) % 1, a = 0.35 + 0.65 * (1 - ph);
+        ctx.strokeStyle = `rgba(255,${180 + k * 25},40,${a})`; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(-8, 8 - k * 8); ctx.lineTo(0, 1 - k * 8); ctx.lineTo(8, 8 - k * 8); ctx.stroke(); }
+      ctx.strokeStyle = 'rgba(255,220,80,0.8)'; ctx.lineWidth = 1; roundRect(ctx, -13, -15, 26, 30, 4); ctx.stroke();
+    } else if (s.k === 'oil') {
+      const gr = ctx.createRadialGradient(-3, -3, 1, 0, 0, 15); gr.addColorStop(0, '#3a3450'); gr.addColorStop(0.6, '#15131c'); gr.addColorStop(1, 'rgba(10,10,14,0.85)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.ellipse(0, 0, 15, 11, 0.4, 0, 7); ctx.ellipse(8, 6, 7, 5, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = `hsla(${(t * 60) % 360},90%,70%,0.45)`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(-2, -2, 8, 5, 0.4, 0, 7); ctx.stroke();
+    } else if (s.k === 'jump') {
+      const R = race.T.W / 2 - 4; ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-R + 2, -9, R * 2, 22);
+      const gr = ctx.createLinearGradient(0, 12, 0, -12); gr.addColorStop(0, '#6a4a2a'); gr.addColorStop(1, '#d8a868'); ctx.fillStyle = gr; ctx.fillRect(-R, -12, R * 2, 24);
+      ctx.fillStyle = '#ffcf20'; for (let k = -R; k < R - 4; k += 8) { ctx.beginPath(); ctx.moveTo(k, -12); ctx.lineTo(k + 4, -12); ctx.lineTo(k + 8, -8); ctx.lineTo(k + 4, -8); ctx.fill(); }
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(6, 3); ctx.lineTo(-6, 3); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(-R, -12, R * 2, 24);
+    } else if (s.k === 'bridge') {   // drawn above the cars: a deck across the road with railings
+      const hw = race.T.W / 2 + 34;
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-hw + 6, -14 + 10, hw * 2, 30);
+      const gr = ctx.createLinearGradient(0, -15, 0, 15); gr.addColorStop(0, '#a8a090'); gr.addColorStop(0.5, '#8a8274'); gr.addColorStop(1, '#6e6658'); ctx.fillStyle = gr; ctx.fillRect(-hw, -15, hw * 2, 30);
+      ctx.fillStyle = '#5a5248'; ctx.fillRect(-hw, -15, hw * 2, 3); ctx.fillRect(-hw, 12, hw * 2, 3);
+      ctx.fillStyle = '#ddd5c0'; for (let k = -hw; k < hw; k += 10) { ctx.fillRect(k, -16, 3, 4); ctx.fillRect(k, 12, 3, 4); }
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(-hw, -6, hw * 2, 1); ctx.fillRect(-hw, 5, hw * 2, 1);
+      ctx.fillStyle = '#4a443c'; ctx.fillRect(-hw - 6, -18, 8, 36); ctx.fillRect(hw - 2, -18, 8, 36);
+    }
+    ctx.restore();
+  }
+}
 // ---------------- stats, challenges, decals ----------------
-function stats0() { const s = save.stats = save.stats || {}; ['races', 'wins', 'starts', 'boosts', 'ghostWins', 'netRaces'].forEach(k => { if (s[k] == null) s[k] = 0; }); s.customIds = s.customIds || []; return s; }
-function statBump(k, n) { const s = stats0(); s[k] = (s[k] || 0) + (n || 1); persist(); }
+function stats0() { const s = save.stats = save.stats || {}; ['races', 'wins', 'starts', 'boosts', 'ghostWins', 'netRaces', 'jumps', 'pads', 'dailies', 'driftSec', 'airSec', 'netWins', 'likes', 'oilWins', 'konami', 'cleanWins'].forEach(k => { if (s[k] == null) s[k] = 0; }); s.customIds = s.customIds || []; return s; }
+function statBump(k, n) { const s = stats0(); s[k] = (s[k] || 0) + (n || 1);
+  if (k === 'wins' && state.race) { const r = state.race; if (r.myOil) s.oilWins++; if (!r.myWall && (r.laps || 0) >= 3) s.cleanWins++; }
+  persist(); }
 function allStats() {
   const s = stats0(), D = save.drift || {}, cs = (save.camp || { beaten: [] }).beaten || [];
   let driftStars = 0, driftBest = 0; for (let k = 0; k < RR.DRIFT_LEVELS.length; k++) { if (D[k]) { driftStars += driftStars0(k, D[k]); driftBest = Math.max(driftBest, D[k]); } }
@@ -3262,6 +3407,7 @@ function checkChallenges() {
   const st = allStats(), done = chDone(); let any = false;
   for (const c of RR.CHALLENGES) if (!done.includes(c.id) && c.stat(st) >= c.goal) { done.push(c.id); any = true; toast('Challenge complete: ' + c.name + '!  Decal unlocked: ' + RR.DECALS[c.decal].name); }
   if (any) persist();
+  checkFxChallenges();
 }
 function decalUnlocked(id) { const c = RR.CHALLENGES.find(c => c.decal === id); return !!c && chDone().includes(c.id); }
 function myDecal() { return save.decal && decalUnlocked(save.decal) ? save.decal : null; }
@@ -3280,6 +3426,10 @@ function decalSprite(id, dec) { dec = dec === undefined ? myDecal() : dec; if (!
     if (c.netId != null && opts.netPlayers) { const p = opts.netPlayers.find(p => p.id === c.netId); dec = p && p.decal; if (c.player === 0) dec = myDecal(); }
     else if (c.player === 0 && !opts.twoPlayer) dec = myDecal();
     if (dec && RR.DECALS[dec]) c.sprite = RR.applyDecal(c.sprite, dec);
+    let sm = null, tr = null;
+    if (c.netId != null && opts.netPlayers) { const p = opts.netPlayers.find(p => p.id === c.netId); if (p) { sm = p.smoke; tr = p.trail; } }
+    if (c.player === 0) { sm = mySmoke(); tr = myTrail(); }
+    c.smoke = RR.SMOKES[sm] && sm !== 'white' ? sm : null; c.trail = RR.TRAILS[tr] && tr !== 'none' ? tr : null;
   } } catch (e) {}
   return race; }; }
 function toast(text) { state.toasts = (state.toasts || []).concat([{ text, t: 4.5 }]); A.play('pickup'); }
@@ -3289,27 +3439,6 @@ function drawToasts(dt) {
   const a = Math.min(1, t.t * 2, (4.5 - t.t) * 4); ctx.globalAlpha = a; ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; const w = ctx.measureText(t.text).width + 24, y = RR.MOBILE ? VH - 96 : VH - 62;
   ctx.fillStyle = 'rgba(20,10,40,0.92)'; roundRect(ctx, VW / 2 - w / 2, y, w, 22, 8); ctx.fill(); ctx.strokeStyle = '#ffcf40'; ctx.lineWidth = 1.5; roundRect(ctx, VW / 2 - w / 2, y, w, 22, 8); ctx.stroke();
   ctx.fillStyle = '#ffcf40'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t.text, VW / 2, y + 11.5); ctx.restore();
-}
-function drawChallenges() {
-  menuBG(); ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0);
-  ctx.fillStyle = 'rgba(10,0,0,0.55)'; ctx.fillRect(0, 0, VW, VH);
-  title('Challenges', RR.MOBILE ? 24 : 18); ctx.setTransform(S, 0, 0, S, 0, 0);
-  const st = allStats(), done = chDone(), M = RR.MOBILE;
-  ctx.fillStyle = '#ffd8c8'; ctx.font = 'bold 8px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(done.length + ' / ' + RR.CHALLENGES.length + ' complete  -  ' + (M ? 'each unlocks a car decal' : 'each one unlocks a car decal (pick it in Choose Your Wheels)'), VW / 2, M ? 44 : 33);
-  RR.CHALLENGES.forEach((c, i) => {
-    const col = M ? 0 : i % 2, row = M ? i : (i / 2) | 0, w = M ? 254 : 228, h = M ? 28 : 30, x = M ? 8 : 10 + col * 232, y = (M ? 52 : 40) + row * (h + (M ? 2 : 3));
-    const ok = done.includes(c.id), v = Math.min(c.goal, c.stat(st));
-    ctx.fillStyle = ok ? 'rgba(40,110,40,0.85)' : 'rgba(60,10,10,0.85)'; roundRect(ctx, x, y, w, h, 6); ctx.fill();
-    ctx.strokeStyle = ok ? '#7cff6a' : 'rgba(255,90,70,0.6)'; ctx.lineWidth = 1; roundRect(ctx, x, y, w, h, 6); ctx.stroke();
-    // decal preview on a white mini car
-    const spr = ok ? decalSprite(5, c.decal) : carSprites[5]; ctx.save(); ctx.translate(x + 15, y + h / 2); ctx.rotate(Math.PI / 2); ctx.globalAlpha = ok ? 1 : 0.35; ctx.imageSmoothingEnabled = true; ctx.drawImage(spr, -9, -11.7, 18, 23.4); ctx.restore();
-    ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.fillText(c.name, x + 32, y + 9);
-    ctx.fillStyle = '#ffd0c0'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.fillText(c.desc + '  ->  ' + RR.DECALS[c.decal].name, x + 32, y + 19);
-    const bw = 44; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x + w - bw - 6, y + 6, bw, 5); ctx.fillStyle = ok ? '#7cff6a' : '#ffb020'; ctx.fillRect(x + w - bw - 6, y + 6, bw * v / c.goal, 5);
-    ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Trebuchet MS",sans-serif'; ctx.fillText(ok ? 'DONE' : (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v) + ' / ' + (c.goal >= 1000 ? c.goal / 1000 + 'k' : c.goal), x + w - 6, y + 20);
-  });
-  ctx.restore(); drawButtons();
 }
 // ---------------- leaderboards (top 10 on this device: every race, Drift Trial and your own tracks) ----------------
 function lbKeyFor(race) { if (race.camp != null) return 's' + race.camp; if (race.custom && state.custom) return 'c' + state.custom.def.id; return 'r' + race.trackIndex; }
@@ -3332,7 +3461,7 @@ function lbFetch(key, force) {
   B.busy = true; const high = key[0] === 'd';
   return fetch(RR.LB.url + 'scores?select=dev,name,v,car&board=eq.' + encodeURIComponent(key) + '&order=v.' + (high ? 'desc' : 'asc') + '&limit=10', { headers: { apikey: RR.LB.key }, cache: 'no-store' })
     .then(r => { if (!r.ok) throw 0; return r.json(); })
-    .then(rows => { B.list = (Array.isArray(rows) ? rows : []).filter(e => e && typeof e.v === 'number' && isFinite(e.v)).map(e => ({ i: String(e.dev || ''), n: cleanName(e.name) || 'Anonymous', v: e.v, c: (e.car | 0) % RR.CARS.length }));
+    .then(rows => { B.list = (Array.isArray(rows) ? rows : []).filter(e => e && typeof e.v === 'number' && isFinite(e.v)).map(e => ({ i: String(e.dev || ''), n: cleanName(e.name) || 'Anonymous', v: e.v, c: (e.car | 0) % RR.CARS.length })); clubTags(B.list.map(e => e.i));
       B.at = Date.now(); B.busy = false; LBG.status = ''; return B.list; })
     .catch(() => { B.busy = false; B.at = Date.now(); LBG.status = 'Can\'t reach the shared board right now (offline?).'; return null; });
 }
@@ -3365,7 +3494,7 @@ function drawBoards() {
   title('Leaderboards', RR.MOBILE ? 24 : 18); ctx.setTransform(S, 0, 0, S, 0, 0);
   const all = lbList(), b = all[(state.lbSel || 0) % all.length], M = RR.MOBILE, shared = !!RR.LB_URL && state.lbScope !== 'me' && /^[rds]\d+$/.test(b.key);
   let L = ((save.lb || {})[b.key]) || [], loading = false;
-  if (shared) { lbFetch(b.key); const B = LBG.boards[b.key]; if (B && B.list) L = B.list.map(e => ({ n: e.n, v: e.v, car: e.c, mine: e.i === save.devId })); else if (!LBG.status) { L = []; loading = true; } }
+  if (shared) { lbFetch(b.key); const B = LBG.boards[b.key]; if (B && B.list) L = B.list.map(e => ({ n: e.n + (CLUBS.tags[e.i] ? ' [' + CLUBS.tags[e.i] + ']' : ''), v: e.v, car: e.c, mine: e.i === save.devId })); else if (!LBG.status) { L = []; loading = true; } }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 14px "Trebuchet MS",sans-serif';
   ctx.fillText(b.cat + ':  ' + b.name, VW / 2, M ? 104 : 74);
   const x0 = M ? 20 : 110, x1 = M ? 250 : 370, y0 = M ? 124 : 88;
@@ -3385,7 +3514,7 @@ function drawBoards() {
 }
 // ---------------- News: what's new + an ideas / questions box (posts go to a public relay the developer reads) ----------------
 const IDEAS_TOPIC = 'retroracing-ideas-ss26';
-const NEWS = ['v1.7: Time Trial medals, a Daily Challenge with its own leaderboard, Watch Replay after every race,', 'share your tracks online with short #codes and browse everyone\'s, plus friends, rivals and invites in Wi-Fi rooms.', 'v1.6: Drift Trials, terrains, Challenges + decals, names, shared leaderboards, tutorial.'];
+const NEWS = ['v1.8: jumps, boost pads, oil and bridges (Track Maker + Story + Daily), tyre smoke colours and trails', 'earned in Challenges, Photo Mode, save replays as video, Spectate + Rematch in Wi-Fi, Clubs, likes + Featured tracks.', 'Psst... there are 3 secrets to find. v1.7: medals, Daily Challenge, replays, shared tracks, friends + rivals.'];
 function newsButtons() { return [B(8, 246, 64, 20, 'Back', () => go('menu')), B(150, 236, 180, 28, 'Ask or suggest', () => openIdeaBox(), { big: 1, blue: 1 })]; }
 function loadIdeas(force) {
   if (state.ideas && !force && Date.now() - state.ideas.at < 60000) return; state.ideas = { at: Date.now(), list: (state.ideas && state.ideas.list) || [], status: 'Loading...' };
@@ -3499,6 +3628,7 @@ function startReplay() {
 }
 function replayCam(d) { const r = state.race; if (!r || !r.replay) return; state.replayCam = (state.replayCam + d + r.cars.length) % r.cars.length; state.cams[0].car = r.cars[state.replayCam]; }
 function endReplay() {
+  clipStopIfAny();
   const B = state.replayBack; if (!B) { go('menu'); return; }
   state.race = B.race; state.result = B.result; state.replayBack = null; state.screen = 'results'; state.focus = B.focus || 0; A.stopEngines();
 }
@@ -3507,8 +3637,8 @@ function drawReplayHUD(race, vw, vh) {
   const c = state.cams[0].car, M = RR.MOBILE;
   ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.55)'; roundRect(ctx, vw / 2 - 90, vh - (M ? 150 : 40), 180, 30, 8); ctx.fill();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = (performance.now() / 500 | 0) % 2 ? '#ff4a4a' : '#ff9a9a'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif';
-  ctx.fillText('● REPLAY   ' + (c.player === 0 ? (myName() || 'YOU') : c.liv.name), vw / 2, vh - (M ? 143 : 33));
-  ctx.fillStyle = '#ddd'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.fillText(M ? 'Tap left / right side: other cars - tap middle: exit' : 'Left / Right: follow another car   -   Esc / Enter: exit', vw / 2, vh - (M ? 132 : 22));
+  ctx.fillText((CLIP.rec ? '● REC   ' : '● REPLAY   ') + (c.player === 0 ? (myName() || 'YOU') : c.liv.name), vw / 2, vh - (M ? 143 : 33));
+  ctx.fillStyle = '#ddd'; ctx.font = '7px "Trebuchet MS",sans-serif'; if (!CLIP.rec) ctx.fillText(M ? 'Sides: other cars - middle: exit - top: save video' : 'Left / Right: other car  -  C: save as video  -  Esc: exit', vw / 2, vh - (M ? 132 : 22)); else { ctx.fillStyle = '#ddd'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.fillText(M ? 'tap the top to stop' : 'C: stop and save', vw / 2, vh - (M ? 132 : 22)); }
   const p = Math.min(1, race.time / race.replayLen); ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(vw / 2 - 80, vh - (M ? 124 : 14), 160, 2); ctx.fillStyle = '#ff4a4a'; ctx.fillRect(vw / 2 - 80, vh - (M ? 124 : 14), 160 * p, 2);
   ctx.restore();
 }
@@ -3517,13 +3647,13 @@ function dayKey(d) { d = d || new Date(); return d.getFullYear() * 10000 + (d.ge
 function dailyInfo(k) {
   k = k || dayKey(); let s = k * 2654435761 >>> 0; const r = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
   const track = (r() * 18) | 0, cars = [0, 1, 2, 3, 4, 5], car = cars[(r() * cars.length) | 0], laps = 1 + ((r() * 3) | 0);
-  const twists = [{ id: 'none', name: 'Classic race - just be quick' }, { id: 'nopick', name: 'No pick-ups on the track' }, { id: 'maxed', name: 'Your car starts fully upgraded' }, { id: 'nitro', name: 'Nitro boxes only' }];
+  const twists = [{ id: 'none', name: 'Classic race - just be quick' }, { id: 'nopick', name: 'No pick-ups on the track' }, { id: 'maxed', name: 'Your car starts fully upgraded' }, { id: 'nitro', name: 'Nitro boxes only' }, { id: 'stunt', name: 'Stunt track: jumps, boost pads and oil!' }];
   return { k, track, car, laps, twist: twists[(r() * twists.length) | 0] };
 }
 function startDaily() {
   const D = dailyInfo(); state.custom = null; state.campK = null; state.driftK = null; state.twoPlayer = false; state.paused = false; state.pauseOpts = false; clearInput();
   state.track = D.track;
-  const race = RR.createRace({ trackIndex: D.track, players: [{ carId: D.car }], raceSeed: D.k });
+  const race = RR.createRace({ trackIndex: D.track, players: [{ carId: D.car }], raceSeed: D.k, autoStunts: D.twist.id === 'stunt' ? { boost: 3, jump: 2, oil: 2, bridge: 1 } : null });
   race.cars = race.cars.filter(c => c.player >= 0); race.laps = D.laps; race.daily = D;
   const me = race.cars[0];
   if (D.twist.id === 'nopick') race.pickups = [];
@@ -3536,7 +3666,7 @@ function finishDaily(race) {
   const me = race.cars[0], D = race.daily, key = 'y' + D.k; save.daily = save.daily || {};
   const t = me.finishTime, prev = save.daily[D.k];
   if (prev == null || t < prev) { save.daily[D.k] = t; persist(); lbAdd(key, t); }
-  statBump('races'); checkChallenges();
+  statBump('races'); statBump('dailies'); checkChallenges();
   state.result = { mode: 'daily', time: t, best: save.daily[D.k], newBest: prev == null || t < prev, D };
   A.stopEngines(); A.play('finish'); go('results'); state.focus = buttons().length - 1; lbFetch(key, true);
 }
@@ -3598,7 +3728,7 @@ function startDrift() {
   const def = { name: L.name, w: L.w, pts: L.pts, cuts: [], theme: L.theme, time: L.time, laps: L.laps || 2, bots: RR.DRIFT_SCORE.bots, diff: L.diff || 'normal', trees: 60, umb: 2, seed: 300 + k * 11 };
   state.track = -1; state.paused = false; state.pauseOpts = false; clearInput(); state.custom = null; state.twoPlayer = false;
   save.lastCar = state.carSel[0]; persist();
-  state.race = RR.createRace({ trackIndex: 0, trackDef: def, players: [{ carId: state.carSel[0] }], drift: true });
+  state.race = RR.createRace({ trackIndex: 0, trackDef: def, players: [{ carId: state.carSel[0] }], drift: true, autoStunts: { boost: 2, bridge: 1 } });
   state.race.driftK = k;
   { const me = state.race.cars.find(c => c.player === 0); state.cams = [{ car: me, x: me.x, y: me.y }]; }   // follow YOUR car (bots line up first on the grid)
   state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null;
@@ -3751,12 +3881,15 @@ function buttonsLandscape() {
       B(74, 244, 74, 20, 'Daily', () => { go('daily'); lbFetch('y' + dayKey(), true); state.focus = 1; }, { blue: 1 }),
       B(392, 244, 80, 20, 'Options', () => go('options')),
       B(352, 244, 36, 20, '', () => notice('Language: English is the only\nlanguage available in this recreation.'), { flag: 1 }),
+      B(154, 244, 92, 20, 'Online Tracks', () => RR.Editor.browse()),
+      B(252, 244, 94, 20, 'Clubs', () => clubOverlay()),
     ];
     case 'options': return optionsButtons(() => go('menu'));
     case 'camp': return campButtons();
     case 'drift': return driftButtons();
     case 'daily': return dailyButtons();
-    case 'challenges': return [B(8, 246, 64, 20, 'Back', () => go('menu'))];
+    case 'challenges': return [B(8, 246, 64, 20, 'Back', () => go('menu')), B(150, 246, 86, 20, 'Decals', () => { state.chPage = 0; }, { blue: !state.chPage }), B(244, 246, 86, 20, 'Smoke & Trails', () => { state.chPage = 1; }, { blue: !!state.chPage })];
+    case 'style': return styleButtons();
     case 'boards': return boardButtons();
     case 'news': return newsButtons();
     case 'cutscene': return [];
@@ -3765,7 +3898,7 @@ function buttonsLandscape() {
         return B(240 - inRow * 23 + c * 46, 134 + r * 42, 40, 36, '', () => { selectCar(id); }, { team: id }); });
       out.push(B(16, 226, 74, 34, 'Back', () => { if (state.selPlayer === 1) state.selPlayer = 0; else if (state.campK != null && !state.net) { state.campK = null; go('camp'); } else if (state.driftK != null && !state.net) { const k = state.driftK; go('drift'); state.focus = k; } else if (state.custom && !state.net) backToCustom(); else go('menu'); }));
       out.push(B(320, 222, 144, 40, 'Play', () => pickCar(), { big: 1 }));
-      if (!state.twoPlayer) out.push(B(110, 226, 196, 34, 'Decal: ' + (myDecal() ? RR.DECALS[myDecal()].name : 'None'), () => cycleDecal(1), { blue: 1 }));
+      if (!state.twoPlayer) { out.push(B(98, 226, 108, 34, 'Decal: ' + (myDecal() ? RR.DECALS[myDecal()].name : 'None'), () => cycleDecal(1), { blue: 1 })); out.push(B(210, 226, 104, 34, 'Smoke & Trail', () => { state.styleBack = state.focus; go('style'); }, { blue: 1 })); }
       return out;
     }
     case 'trackselect': {
@@ -3781,13 +3914,15 @@ function buttonsLandscape() {
       return out;
     }
     case 'race':
+      if (state.photo) return photoButtons();
       if (state.paused && state.pauseOpts) return optionsButtons(() => { state.pauseOpts = false; state.focus = 3; });
       if (state.paused) return [
         B(180, 80, 120, 26, 'Resume', () => { state.paused = false; clearInput(); }),
         B(180, 111, 120, 26, 'Restart', () => state.race.mode === 'net' ? notice('A Wi-Fi race can\'t be restarted.\nThe host can pick the next race when it ends.') : state.race.video ? startVideoTest(state.videoMode === 'replay' ? 'replay' : 'drive') : state.race.tut ? startTutorial() : state.race.daily ? startDaily() : state.race.mode === 'ghost' && !state.race.custom ? startGhostRace(state.track) : state.race.camp != null ? startCampRace() : state.race.drift ? startDrift() : state.race.custom ? startCustom() : startRace(state.track)),
         B(180, 142, 120, 26, 'Quit', () => { if (state.race.mode === 'net') { netLeave(); return; } if (state.race.tut) { finishTutorial(false); return; } if (state.race.camp != null) { state.race = null; A.stopEngines(); go('camp'); return; } if (state.race.drift) { const k = state.driftK; state.race = null; go('drift'); state.focus = k; return; } if (state.race.custom) { backToCustom(); return; } state.race = null; state.videoMode = null; go('trackselect'); }),
         B(180, 173, 120, 26, 'Options', () => { state.pauseOpts = true; state.focus = 0; }),
-      ].concat(RR.MOBILE ? [B(150, 206, 180, 24, 'Song: ' + A.SONGS[A.songIdx].name, () => A.stepSong(1), { song: 1 })] : []);
+        B(180, 204, 120, 26, 'Photo Mode', () => photoStart()),
+      ].concat(RR.MOBILE ? [B(150, 237, 180, 24, 'Song: ' + A.SONGS[A.songIdx].name, () => A.stepSong(1), { song: 1 })] : []);
       return [];
     case 'netwait': return [B(190, 232, 100, 28, 'Leave', () => netLeave())];
     case 'results': {
@@ -3798,9 +3933,11 @@ function buttonsLandscape() {
       if (R && R.mode === 'ghost' && R.custom) return [B(16, 226, 74, 34, 'Back', () => backToCustom(), { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startCustom(), { blue: 1 }), B(320, 222, 144, 40, 'Race Bots', () => { state.custom.ghost = false; startCustom(); }, { big: 1, blue: 1 })];
       if (R && R.mode === 'ghost') return [B(16, 226, 74, 34, 'Back', () => { state.race = null; go('trackselect'); }, { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startGhostRace(state.track), { blue: 1 }),
         B(320, 222, 144, 40, 'Race Bots', () => startRace(state.track), { big: 1, blue: 1 })];
-      if (R && R.mode === 'net') return NET.role === 'host'
-        ? [B(16, 226, 74, 34, 'Leave', () => { rivalsOnce(); netLeave(); }, { blue: 1 }), B(320, 222, 144, 40, 'Next Race', () => { rivalsOnce(); netEvent({ type: 'back' }); state.race = null; go('trackselect'); state.focus = state.track; }, { big: 1, blue: 1 })]
-        : [B(16, 226, 74, 34, 'Leave', () => { rivalsOnce(); netLeave(); }, { blue: 1 })];
+      if (R && R.mode === 'net') return (NET.role === 'host'
+        ? [B(16, 226, 74, 34, 'Leave', () => { rivalsOnce(); netLeave(); }, { blue: 1 }), B(320, 222, 144, 40, 'Next Race', () => { rivalsOnce(); netEvent({ type: 'back' }); state.race = null; go('trackselect'); state.focus = state.track; }, { big: 1, blue: 1 }),
+           B(206, 226, 106, 34, 'Rematch', () => netRematch(), { blue: 1 })]
+        : [B(16, 226, 74, 34, 'Leave', () => { rivalsOnce(); netLeave(); }, { blue: 1 }), B(320, 222, 144, 40, R.wantRematch ? 'Asked!' : 'Want Rematch?', () => netAskRematch(), { big: 1, blue: 1 })])
+        .concat(canSpectate() ? [B(98, 226, 104, 34, 'Spectate', () => spectateStart(), { blue: 1 })] : []);
       if (state.race && state.race.camp != null) return [B(16, 226, 90, 34, 'Rivals', () => { state.race = null; go('camp'); state.focus = CAMP_GRID.indexOf(state.campK); }, { blue: 1 }), B(320, 222, 144, 40, 'Retry', () => playCut(RR.CampScripts.vs(state.campK, state.carSel[0]).slice(0, 1), () => startCampRace()), { big: 1, blue: 1 })];
       if (state.race && state.race.custom) return [B(16, 226, 74, 34, 'Back', () => backToCustom(), { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startCustom(), { blue: 1 })]
         .concat(state.custom && !state.twoPlayer && hasGhost('c_' + state.custom.def.id) ? [B(180, 226, 104, 34, 'vs Ghost', () => { state.custom.ghost = true; startCustom(); }, { blue: 1 })] : [])
@@ -3816,14 +3953,15 @@ function buttonsLandscape() {
 }
 // Phone (portrait 270x480) positions, by screen, in the same order as the landscape lists.
 const PORTRAIT = {
-  menu: [[14, 230, 116, 38], [140, 230, 116, 38], [14, 280, 116, 38], [140, 280, 116, 38], [14, 330, 116, 38], [140, 330, 116, 38], [4, 4, 92, 20], [174, 4, 92, 20], [4, 454, 56, 22], [64, 454, 74, 22], [186, 454, 80, 22], [142, 454, 40, 22]],
+  menu: [[14, 230, 116, 38], [140, 230, 116, 38], [14, 280, 116, 38], [140, 280, 116, 38], [14, 330, 116, 38], [140, 330, 116, 38], [4, 4, 92, 20], [174, 4, 92, 20], [4, 454, 56, 22], [64, 454, 74, 22], [186, 454, 80, 22], [142, 454, 40, 22], [14, 384, 116, 30], [140, 384, 116, 30]],
   options: [[45, 56, 180, 28], [45, 88, 180, 28], [45, 120, 180, 28], [45, 152, 180, 28], [45, 184, 180, 28], [45, 222, 180, 26], [45, 254, 180, 26], [65, 292, 140, 28], [85, 430, 100, 32], [65, 330, 140, 28], [65, 364, 140, 28]],
   carselect: [[33, 262, 60, 44], [105, 262, 60, 44], [177, 262, 60, 44], [33, 322, 60, 44], [105, 322, 60, 44], [177, 322, 60, 44], [10, 424, 80, 40], [130, 418, 130, 48]],
-  race: [[65, 146, 140, 34], [65, 188, 140, 34], [65, 230, 140, 34], [65, 272, 140, 34], [35, 326, 200, 32]],
+  race: [[65, 146, 140, 34], [65, 188, 140, 34], [65, 230, 140, 34], [65, 272, 140, 34], [65, 314, 140, 34], [35, 358, 200, 32]],
   results: [[8, 424, 76, 40], [92, 424, 76, 40], [176, 418, 86, 48], [8, 372, 160, 40]],
   netwait: [[85, 432, 100, 32]],
 };
 function relayout(list) {
+  if (state.photo && state.screen === 'race') return list;
   const sc = state.screen === 'race' && state.pauseOpts ? 'options' : state.screen;
   if (sc === 'trackselect') {
     const extra = list.length - 18, row = [[85, 100], [18, 108, 142, 110], [8, 80, 95, 80, 182, 80]][Math.max(0, extra - 1)] || [85, 100];
@@ -3832,11 +3970,11 @@ function relayout(list) {
   }
   if (sc === 'carselect') {   // phone: 5 cars a row, Back + Play underneath
     const n = RR.CAR_ORDER.length;
-    list.forEach((b, i) => { if (i < n) Object.assign(b, { x: 13 + (i % 5) * 50, y: 238 + ((i / 5) | 0) * 52, w: 44, h: 46 }); else if (i === n) Object.assign(b, { x: 10, y: 424, w: 80, h: 40 }); else if (i === n + 2) Object.assign(b, { x: 40, y: 393, w: 190, h: 26 }); else Object.assign(b, { x: 130, y: 418, w: 130, h: 48 }); });
+    list.forEach((b, i) => { if (i < n) Object.assign(b, { x: 13 + (i % 5) * 50, y: 238 + ((i / 5) | 0) * 52, w: 44, h: 46 }); else if (i === n) Object.assign(b, { x: 10, y: 424, w: 80, h: 40 }); else if (i === n + 2) Object.assign(b, { x: 8, y: 393, w: 124, h: 26 }); else if (i === n + 3) Object.assign(b, { x: 138, y: 393, w: 124, h: 26 }); else Object.assign(b, { x: 130, y: 418, w: 130, h: 48 }); });
     return list;
   }
   if (sc === 'camp') return campLayoutPhone(list);
-  if (sc === 'challenges') { list[0] && Object.assign(list[0], { x: 85, y: 440, w: 100, h: 30 }); return list; }
+  if (sc === 'challenges') { const P2 = [[6, 446, 66, 28], [78, 446, 86, 28], [170, 446, 94, 28]]; list.forEach((b, i) => P2[i] && Object.assign(b, { x: P2[i][0], y: P2[i][1], w: P2[i][2], h: P2[i][3] })); return list; }
   if (sc === 'boards') { const P2 = [[10, 420, 70, 32], [100, 420, 70, 32], [190, 420, 70, 32], [8, 60, 60, 24], [72, 60, 62, 24], [138, 60, 60, 24], [202, 60, 60, 24], [60, 372, 150, 26]]; list.forEach((b, i) => P2[i] && Object.assign(b, { x: P2[i][0], y: P2[i][1], w: P2[i][2], h: P2[i][3] })); return list; }
   if (sc === 'daily') { const P2 = [[10, 440, 80, 30], [100, 432, 160, 40]]; list.forEach((b, i) => P2[i] && Object.assign(b, { x: P2[i][0], y: P2[i][1], w: P2[i][2], h: P2[i][3] })); return list; }
   if (sc === 'news') { const P2 = [[10, 440, 80, 30], [100, 440, 160, 30]]; list.forEach((b, i) => P2[i] && Object.assign(b, { x: P2[i][0], y: P2[i][1], w: P2[i][2], h: P2[i][3] })); return list; }
@@ -3862,7 +4000,7 @@ function pickCar() {
   if (state.campK != null && !state.net) { const k = state.campK; playCut(RR.CampScripts.vs(k, state.carSel[0]), () => startCampRace()); return; }
   if (state.driftK != null && !state.net) { startDrift(); return; }
   if (state.custom && !state.net) { save.lastCar = state.carSel[0]; persist(); startCustom(); return; }
-  if (state.net) { if (NET.role === 'host') { NET.roster[0] = { car: state.carSel[0], decal: myDecal(), name: myName(), dev: devId() }; netBroadcastRoster(); go('trackselect'); state.focus = state.track || 0; } else { netEvent({ type: 'car', car: state.carSel[0], decal: myDecal(), name: myName(), dev: devId() }); state.screen = 'netwait'; state.focus = 0; } return; }
+  if (state.net) { if (NET.role === 'host') { NET.roster[0] = { car: state.carSel[0], decal: myDecal(), name: myName(), dev: devId(), smoke: mySmoke(), trail: myTrail(), club: myClubTag() }; netBroadcastRoster(); go('trackselect'); state.focus = state.track || 0; } else { netEvent({ type: 'car', car: state.carSel[0], decal: myDecal(), name: myName(), dev: devId(), smoke: mySmoke(), trail: myTrail(), club: myClubTag() }); state.screen = 'netwait'; state.focus = 0; } return; }
   state.track = state.twoPlayer ? state.track : Math.min(save.unlocked, 17);
   go('trackselect'); state.focus = state.twoPlayer ? state.track : Math.min(save.unlocked, 17);
 }
@@ -3872,6 +4010,9 @@ function onPress(code) {
   if (state.notice) { if (['Enter', 'Space', 'Escape', 'KeyZ', 'Backspace'].includes(code)) { state.notice = null; A.play('back'); } return; }
   if (state.info) { if (['Enter', 'Space', 'Escape', 'KeyZ', 'Backspace'].includes(code)) { state.info = false; A.play('back'); } return; }
   if (state.confirm && (code === 'Escape' || code === 'Backspace')) { state.confirm = null; state.focus = 0; A.play('back'); return; }
+  if (state.photo && state.screen === 'race' && photoKey(code)) return;
+  if (state.spectate && state.screen === 'race') { if (code === 'ArrowLeft' || code === 'KeyA') spectateSwitch(-1); else if (code === 'ArrowRight' || code === 'KeyD') spectateSwitch(1); else if (['Escape', 'Enter', 'Space', 'Backspace', 'KeyZ'].includes(code)) spectateEnd(); return; }
+  if (secretKey(code)) return;
   if (state.screen === 'race' && state.race && state.race.video && !state.paused) {
     if (code === 'KeyR') { startVideoTest('replay'); return; }
     if (code === 'KeyF') { startVideoTest('drive'); return; }
@@ -3909,7 +4050,7 @@ function onPress(code) {
   if (['Enter', 'Space', 'KeyZ', 'NumpadEnter'].includes(code)) { activate(b[state.focus]); return; }
   if (code === 'Escape' || code === 'Backspace') {
     if (state.screen === 'carselect' && state.campK != null && !state.net) { A.play('back'); state.campK = null; go('camp'); return; }
-    const back = { options: 'menu', carselect: 'menu', trackselect: 'carselect', results: 'trackselect', camp: 'menu' }[state.screen];
+    const back = { options: 'menu', carselect: 'menu', trackselect: 'carselect', results: 'trackselect', camp: 'menu', style: 'carselect', challenges: 'menu' }[state.screen];
     if (state.screen === 'carselect' && state.selPlayer === 1) { state.selPlayer = 0; return; }
     if (back) { A.play('back'); go(back); }
   }
@@ -3947,7 +4088,7 @@ function startCampRace() {
   const k = state.campK, r = campRival(k), L = r.level;
   const def = { name: L.name, w: L.w, pts: L.pts, cuts: [], theme: L.theme, time: L.time, laps: 3, bots: 1, trees: 80, umb: 3, seed: 100 + k * 7 };
   state.track = -1; state.paused = false; state.pauseOpts = false; clearInput(); state.custom = null;
-  state.race = RR.createRace({ trackIndex: 0, trackDef: def, players: [{ carId: state.carSel[0] }], rival: { carId: r.car, scale: r.scale, name: r.alias } });
+  state.race = RR.createRace({ trackIndex: 0, trackDef: def, players: [{ carId: state.carSel[0] }], rival: { carId: r.car, scale: r.scale, name: r.alias }, autoStunts: { boost: 2, jump: 1, bridge: 1 } });
   state.race.camp = k;
   state.cams = [{ car: state.race.cars.find(c => c.player === 0) }]; state.cams[0].x = state.cams[0].car.x; state.cams[0].y = state.cams[0].car.y;
   state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null;
@@ -4030,7 +4171,7 @@ function backToCustom() {
   const C = state.custom; state.race = null; state.result = null; A.stopEngines(); A.setMusic('menu'); go('menu');
   if (C && C.from === 'editor') { const fresh = RR.Editor.store.load().find(t => t.id === C.def.id) || C.def; RR.Editor.edit(fresh); } else RR.Editor.openList();
 }
-RR.game = { playCustom, toMenu: () => go('menu'), hasGhost: id => hasGhost('c_' + id), bestOf: id => (save.customBest || {})[id], myName: () => myName(), devId: () => devId() };
+RR.game = { playCustom, toMenu: () => go('menu'), hasGhost: id => hasGhost('c_' + id), bestOf: id => (save.customBest || {})[id], myName: () => myName(), devId: () => devId(), liked: () => { statBump('likes'); checkChallenges(); } };
 function startRace(ti, seed) {
   state.custom = null;
   state.track = ti; state.paused = false; state.pauseOpts = false; clearInput();
@@ -4130,7 +4271,7 @@ function netLinkDown(link) {
 }
 function netBroadcastRoster() {
   NET.roster[0] = NET.roster[0] || { car: null };
-  const players = Object.keys(NET.roster).map(Number).sort((a, b) => a - b).map(id => ({ id, car: NET.roster[id].car, decal: NET.roster[id].decal || null, name: NET.roster[id].name || null, dev: NET.roster[id].dev || null }));
+  const players = Object.keys(NET.roster).map(Number).sort((a, b) => a - b).map(id => ({ id, car: NET.roster[id].car, decal: NET.roster[id].decal || null, name: NET.roster[id].name || null, dev: NET.roster[id].dev || null, smoke: NET.roster[id].smoke || null, trail: NET.roster[id].trail || null, club: NET.roster[id].club || null }));
   const s = JSON.stringify({ type: 'roster', players, max: NET.max, id: 0 }); NET.peers.forEach(p => netSend(p.ev, s));
   NET.rosterList = players;
 }
@@ -4138,7 +4279,7 @@ function netIncoming(link, m) {
   if (NET.role === 'host') {   // tag with the sender, use it, and pass it on to everyone else
     if (m.type === 'welcome' || m.type === 'roster' || m.type === 'start') return;
     m.id = link.id;
-    if (m.type === 'car') { NET.roster[link.id] = { car: m.car, decal: typeof m.decal === 'string' && RR.DECALS[m.decal] ? m.decal : null, name: cleanName(m.name), dev: typeof m.dev === 'string' && /^[a-z0-9]{4,12}$/.test(m.dev) ? m.dev : null }; netBroadcastRoster(); }
+    if (m.type === 'car') { NET.roster[link.id] = { car: m.car, decal: typeof m.decal === 'string' && RR.DECALS[m.decal] ? m.decal : null, name: cleanName(m.name), dev: typeof m.dev === 'string' && /^[a-z0-9]{4,12}$/.test(m.dev) ? m.dev : null, smoke: RR.SMOKES[m.smoke] ? m.smoke : null, trail: RR.TRAILS[m.trail] ? m.trail : null, club: typeof m.club === 'string' && /^[A-Z0-9]{2,4}$/.test(m.club) ? m.club : null }; netBroadcastRoster(); }
     const s = JSON.stringify(m);
     NET.peers.forEach(p => { if (p !== link) netSend(m.type === 's' ? p.st : p.ev, s); });
   }
@@ -4195,7 +4336,7 @@ function startNetRace(m) {
   state.track = m.track; state.paused = false; state.pauseOpts = false; clearInput(); state.twoPlayer = false;
   state.race = RR.createRace({ trackIndex: m.def ? 0 : m.track, trackDef: m.def, mode: 'net', netPlayers: m.players, netBots: m.bots || [], botHost: NET.role === 'host', myId: NET.myId, raceSeed: m.seed, players: [{ carId: state.carSel[0] }] });
   state.cams = [{ car: state.race.cars.find(c => c.player === 0) }]; state.cams[0].x = state.cams[0].car.x; state.cams[0].y = state.cams[0].car.y;
-  state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null; NET.sendT = 0;
+  state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null; NET.sendT = 0; state.spectate = false;
   A.setMusic('game'); A.setEngines(1);
 }
 function netPickRace(i, def) {   // host picked a race (or one of their own tracks)
@@ -4204,7 +4345,8 @@ function netPickRace(i, def) {   // host picked a race (or one of their own trac
   const missing = players.filter(p => p.car == null).map(p => pname(p.id));
   if (missing.length) { notice('Waiting for ' + missing.join(', ') + ' to pick a car...'); return; }
   if (NET.es) { NET.es.close(); NET.es = null; }   // room closes to new players once racing
-  const m = { type: 'start', track: i, seed: (Math.random() * 0xffffff) | 0, players: players.map(p => ({ id: p.id, car: p.car, decal: p.decal || null, name: p.name || null })), bots: [] };
+  const m = { type: 'start', track: i, seed: (Math.random() * 0xffffff) | 0, players: players.map(p => ({ id: p.id, car: p.car, decal: p.decal || null, name: p.name || null, smoke: p.smoke || null, trail: p.trail || null, club: p.club || null })), bots: [] };
+  NET.lastPick = { i, def };
   if (NET.fillBots) {   // bots take the empty spots in the room
     const taken = new Set(players.map(p => p.id)), usedCars = new Set(players.map(p => p.car)), freeCars = RR.CARS.filter(c => c.camp == null).map(c => c.id).filter(id => !usedCars.has(id));
     for (let slot = 0, k = 0; slot < 8 && players.length + m.bots.length < NET.max; slot++) {
@@ -4435,6 +4577,7 @@ function finishModeRace(race) {
     save.best[i] = me.finishTime; persist(); res.newBest = true;
     if (race.rec) saveGhost(i, race.rec, me.finishTime, state.carSel[0], race.recK);
   }
+  if (me.finished && race.mode === 'net') { const others = race.cars.filter(c => c !== me && c.netId != null && !c.netBot); if (others.length && others.every(c => res.times[c.netId] == null || res.times[c.netId] > me.finishTime)) statBump('netWins'); }
   if (me.finished) { statBump('races'); if (race.mode === 'net') statBump('netRaces'); if (race.mode === 'ghost' && res.otherTime != null && me.finishTime < res.otherTime) statBump('ghostWins'); if (race.mode === 'ghost') lbAdd(lbKeyFor(race), me.finishTime); }
   checkChallenges();
   state.result = res; A.stopEngines(); A.play('finish'); go('results'); state.focus = buttons().length - 1;
@@ -4486,10 +4629,14 @@ function handleEvents(race) {
     else if (e.type === 'pickup' && mine) { A.play(e.kind === 'N' ? 'nitro' : 'pickup'); A.say(RR.PICKUPS[e.kind].voice); if (race.mode === 'net') netEvent({ type: 'pk', i: e.idx }); }
     else if (e.type === 'pickup' && race.mode === 'net' && e.car.netBot && !e.car.puppet) netEvent({ type: 'pk', i: e.idx });
     else if (e.type === 'finish' && race.mode === 'net' && e.car.netBot && !e.car.puppet) { netEvent({ type: 'fin', t: e.car.finishTime }, e.car.netId); if (state.result && state.result.mode === 'net') state.result.times[e.car.netId] = e.car.finishTime; }
-    else if (e.type === 'wall') { if (mine) { A.play('wall', e.power); padRumble(e.car.player, e.power / 260, 140); } if (e.power > 60) fxBurst('smoke', e.car.x, e.car.y, Math.min(10, e.power / 25) | 0, 50); }
+    else if (e.type === 'wall') { if (mine && e.car.player === 0 && e.power > 25) race.myWall = true; if (mine) { A.play('wall', e.power); padRumble(e.car.player, e.power / 260, 140); } if (e.power > 60) fxBurst('smoke', e.car.x, e.car.y, Math.min(10, e.power / 25) | 0, 50); }
     else if (e.type === 'car' && (mine || (e.other && e.other.player >= 0))) { A.play('car', e.power); if (mine) padRumble(e.car.player, e.power / 320, 100); if (e.other && e.other.player >= 0) padRumble(e.other.player, e.power / 320, 100); }
     else if (e.type === 'cone' && mine) A.play('cone');
     else if (e.type === 'startBoost' && mine) { statBump('starts'); A.play('nitro'); padRumble(e.car.player, 0.4, 180); }
+    else if (e.type === 'boostPad' && mine) { if (e.car.player === 0 && !race.replay) statBump('pads'); A.play('nitro'); padRumble(e.car.player, 0.35, 150); }
+    else if (e.type === 'oil' && mine) { if (e.car.player === 0) race.myOil = true; A.play('skid'); padRumble(e.car.player, 0.6, 300); }
+    else if (e.type === 'jump' && mine) { if (e.car.player === 0 && !race.replay) statBump('jumps'); A.play('nitro'); }
+    else if (e.type === 'land' && mine) { A.play('bump'); padRumble(e.car.player, 0.7, 180); }
     else if (e.type === 'driftBoost' && mine) { statBump('boosts'); A.play('nitro'); padRumble(e.car.player, 0.5, 220); }
     else if (e.type === 'finish' && mine) { A.play('finish'); if (race.mode === 'net') netEvent({ type: 'fin', t: e.car.finishTime }); }
   }
@@ -4514,9 +4661,9 @@ function softSprite(rgb) {
 const PUFF = { snow: softSprite('250,252,255'), smoke: softSprite('236,236,232'), dust: softSprite('196,168,120'), grass: softSprite('178,166,118'), dark: softSprite('60,58,56'), fire: softSprite('255,170,60') };
 const softShadowSpr = RR.makeSoftShadow();
 const TUFT_COL = ['#2f6e20', '#3b7f27', '#2a6420'], TUFT_TIP = ['#7fc65a', '#9ad46c', '#6db84c'], TALL_COL = ['#2e6a20', '#3d7a28', '#4a7f2a'], TALL_TIP = ['#8cc05a', '#a9cf6c', '#c4d77a'];
-function fxSpawn(kind, x, y, vx, vy, size, life) {
+function fxSpawn(kind, x, y, vx, vy, size, life, col) {
   const P = FX.parts; if (P.length > (fxHD() ? (RR.MOBILE ? 180 : 360) : 90)) P.shift();
-  P.push({ kind, x, y, vx, vy, s: size, g: size * (kind === 'fire' ? -0.6 : 1.4), life, t: 0, rot: Math.random() * 6.28 });
+  P.push({ kind, x, y, vx, vy, s: size, g: size * (kind === 'fire' ? -0.6 : 1.4), life, t: 0, rot: Math.random() * 6.28, col: col || null });
 }
 function markCol(T, a) { const m = (T.theme || RR.THEMES.grass).mark; return `rgba(${m[0]},${m[1]},${m[2]},${m[3] * a})`; }
 function carLook(c) {   // speed, sideways speed, rear wheel positions (works for puppets too)
@@ -4528,6 +4675,8 @@ function fxUpdate(race, dt) {
   const T = race.T, hd = fxHD();
   FX.wind += dt; FX.dt = dt;
   for (const c of race.cars) {
+    trailUpdate(c, dt);
+    if (c.player === 0 && !race.replay && !race.video && c.puppet == null) { if (c.air > 0) FXS.air += dt; else if (Math.hypot(c.vx, c.vy) > 60 && RR.surfAt(T, c.x, c.y) === 1 && carLook(c).lat > 45) FXS.drift += dt; }
     if (c.puppet === 'ghost') { c.fxW = null; continue; }
     const L = carLook(c), surf = RR.surfAt(T, c.x, c.y), road = surf === 1;
     // --- tyre marks: sliding on tarmac, or any driving over grass / dirt / sand ---
@@ -4547,7 +4696,7 @@ function fxUpdate(race, dt) {
                       : (L.sp > 40 ? (surf === 0 ? 18 : 34) * Math.min(1, L.sp / 150) : 0);
     let n = rate * dt; while (n > 0) {
       if (Math.random() < n) { const w = L.w[(Math.random() * 2) | 0];
-        fxSpawn(road ? 'smoke' : surf === 0 ? ((T.theme && T.theme.puff) || 'grass') : (T.theme && T.theme.puff === 'snow' && surf === 2 ? 'snow' : 'dust'), w[0] + (Math.random() - 0.5) * 4, w[1] + (Math.random() - 0.5) * 4, c.vx * 0.15 + (Math.random() - 0.5) * 18, c.vy * 0.15 + (Math.random() - 0.5) * 18, road ? 7 : 6, road ? 1.3 : 0.9); }
+        fxSpawn(road ? 'smoke' : surf === 0 ? ((T.theme && T.theme.puff) || 'grass') : (T.theme && T.theme.puff === 'snow' && surf === 2 ? 'snow' : 'dust'), w[0] + (Math.random() - 0.5) * 4, w[1] + (Math.random() - 0.5) * 4, c.vx * 0.15 + (Math.random() - 0.5) * 18, c.vy * 0.15 + (Math.random() - 0.5) * 18, road ? 7 : 6, road ? 1.3 : 0.9, road ? c.smoke : null); }
       n -= 1;
     }
     if (c.nitro > 0 && Math.random() < dt * 40) { fxSpawn('fire', c.x - L.fx * 15, c.y - L.fy * 15, -L.fx * 60 + c.vx * 0.6, -L.fy * 60 + c.vy * 0.6, 4, 0.25); if (Math.random() < 0.5) fxSpawn('dark', c.x - L.fx * 16, c.y - L.fy * 16, c.vx * 0.3, c.vy * 0.3, 4, 0.7); }
@@ -4558,10 +4707,10 @@ function fxUpdate(race, dt) {
 function fxBurst(kind, x, y, n, sp) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = sp * (0.4 + Math.random()); fxSpawn(kind, x, y, Math.cos(a) * s, Math.sin(a) * s, 5, 0.6 + Math.random() * 0.4); } }
 function fxDrawParts(minAlpha) {
   for (const p of FX.parts) {
-    const k = p.t / p.life, a = (p.kind === 'fire' ? 0.9 : p.kind === 'smoke' ? 0.55 : p.kind === 'snow' ? 0.8 : 0.6) * (1 - k) * Math.min(1, p.t * 12);
+    const k = p.t / p.life, a = (p.kind === 'fire' ? 0.9 : p.col ? 0.75 : p.kind === 'smoke' ? 0.55 : p.kind === 'snow' ? 0.8 : 0.6) * (1 - k) * Math.min(1, p.t * 12);
     if (a < (minAlpha || 0.01)) continue;
     ctx.globalAlpha = a; if (p.kind === 'fire') ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(PUFF[p.kind], p.x - p.s, p.y - p.s, p.s * 2, p.s * 2);
+    ctx.drawImage(p.col ? smokeSpr(p.col, p.rot) : PUFF[p.kind], p.x - p.s, p.y - p.s, p.s * 2, p.s * 2);
     if (p.kind === 'fire') ctx.globalCompositeOperation = 'source-over';
   }
   ctx.globalAlpha = 1;
@@ -4742,12 +4891,12 @@ function fxPost(race, cx, cy, ww, wh, vx, vy, vw, vh) {
 function drawView(race, cam, vx, vy, vw, vh) {
   const T = race.T, car = cam.car;
   // camera: centred with velocity look-ahead [observed: player car offset toward travel direction]
-  const Z = RR.ZOOM, ww = vw * Z, wh = vh * Z, k = S / Z;
+  const PH = state.photo && state.screen === 'race' ? state.photo : null, Z = RR.ZOOM / (PH ? PH.zoom : 1), ww = vw * Z, wh = vh * Z, k = S / Z;
   ctx.save();
   ctx.setTransform(S, 0, 0, S, 0, 0);
   ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip();
   ctx.setTransform(k, 0, 0, k, vx * S, vy * S);
-  let cx = cam.x - ww / 2, cy = cam.y - wh / 2;
+  let cx = cam.x + (PH ? PH.ox : 0) - ww / 2, cy = cam.y + (PH ? PH.oy : 0) - wh / 2;
   cx = Math.max(0, Math.min(T.width - ww, cx)); cy = Math.max(0, Math.min(T.height - wh, cy));
   cx = Math.round(cx * k) / k; cy = Math.round(cy * k) / k;
   ctx.translate(-cx, -cy);
@@ -4757,6 +4906,7 @@ function drawView(race, cam, vx, vy, vw, vh) {
   fxGrass(race, cx - 12, cy - 12, cx + ww + 12, cy + wh + 12, state.paused && race.mode !== 'net' ? 0 : 1);
   const inView = (x, y, m) => x > cx - m && x < cx + ww + m && y > cy - m && y < cy + wh + m;
   if (race.driftZone) drawDriftZones(race, inView);
+  if (race.stunts && race.stunts.length) drawStunts(race, inView, false);
   for (const p of race.pickups) {
     if (!p.active || !inView(p.x, p.y, 20)) continue;
     ctx.drawImage(pickupSpr[p.type], Math.round(p.x - 8.5), Math.round(p.y - 8.5));
@@ -4766,18 +4916,21 @@ function drawView(race, cam, vx, vy, vw, vh) {
   }
   for (const k of race.cones) if (inView(k.x, k.y, 8)) ctx.drawImage(coneSpr, Math.round(k.x - 3.5), Math.round(k.y - 3.5));
   if (race.video) drawVideoOverlay(race);
+  drawTrails(race, inView);
   for (const c of race.cars) {
     if (!inView(c.x, c.y, 30)) continue;
     if (c.puppet === 'ghost') continue;
-    ctx.save(); ctx.translate(c.x + 3, c.y + 4); ctx.rotate(c.a); ctx.imageSmoothingEnabled = true; ctx.drawImage(softShadowSpr, -18, -21, 36, 42); ctx.imageSmoothingEnabled = false; ctx.restore();
+    const air = c.air > 0 ? Math.sin(Math.PI * (1 - c.air / c.airMax)) : 0;
+    ctx.save(); ctx.translate(c.x + 3 + air * 10, c.y + 4 + air * 12); ctx.rotate(c.a); ctx.imageSmoothingEnabled = true; if (air) ctx.globalAlpha = 1 - air * 0.5; ctx.drawImage(softShadowSpr, -18, -21, 36, 42); ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false; ctx.restore();
   }
   ctx.imageSmoothingEnabled = true; fxDrawParts(); ctx.imageSmoothingEnabled = false;
   for (const c of race.cars) {
     if (!inView(c.x, c.y, 30)) continue;
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.a); if (c.puppet === 'ghost' && !c.replay) { ctx.globalAlpha = 0.42; ctx.imageSmoothingEnabled = true; ctx.drawImage(c.sprite, -10, -13, 20, 26); ctx.imageSmoothingEnabled = false; } else drawCarLit(c); ctx.globalAlpha = 1;
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.a); if (c.air > 0) { const s = 1 + 0.3 * Math.sin(Math.PI * (1 - c.air / c.airMax)); ctx.scale(s, s); } if (c.puppet === 'ghost' && !c.replay) { ctx.globalAlpha = 0.42; ctx.imageSmoothingEnabled = true; ctx.drawImage(c.sprite, -10, -13, 20, 26); ctx.imageSmoothingEnabled = false; } else drawCarLit(c); ctx.globalAlpha = 1;
     if (c.nitro > 0) { ctx.fillStyle = (race.time * 20 | 0) % 2 ? '#ffd040' : '#ff7020'; ctx.fillRect(-3, 13, 6, 3 + (race.time * 30 % 3)); }
     ctx.restore();
   }
+  if (race.stunts && race.stunts.length) drawStunts(race, inView, true);
   ctx.imageSmoothingEnabled = true;
   for (const d of T.decor) {
     if (!inView(d.x, d.y, 50)) continue;
@@ -4791,7 +4944,7 @@ function drawView(race, cam, vx, vy, vw, vh) {
   ctx.restore(); fxPost(race, cx, cy, ww, wh, vx, vy, vw, vh); ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip(); ctx.setTransform(k, 0, 0, k, vx * S, vy * S); ctx.translate(-cx, -cy);
   // POS label above player car [observed "POS 5 / 8"]
   for (const c of race.cars) {
-    if (race.video || c !== cam.car || !inView(c.x, c.y, 30)) continue;
+    if (race.video || PH || c !== cam.car || !inView(c.x, c.y, 30)) continue;
     const pos = RR.positionOf(race, c), txt = 'POS ' + pos + ' / ' + race.cars.length, w = RR.textWidth(txt, 1);
     const lx = Math.round(c.x - w / 2), ly = Math.round(c.y - 30);
     ctx.fillStyle = 'rgba(60,60,60,0.55)'; roundRect(ctx, lx - 4, ly - 3, w + 8, 13, 3); ctx.fill();
@@ -4799,7 +4952,7 @@ function drawView(race, cam, vx, vy, vw, vh) {
     if (c.popup) { const pw = RR.textWidth(c.popup.text, 1); RR.pixText(ctx, c.popup.text, Math.round(c.x - pw / 2), ly - 11, 1, c.popup.color); }
   }
   ctx.restore();
-  if (race.video) drawVideoHUD(race, car, vx, vy, vw, vh); else drawHUD(race, car, vx, vy, vw, vh);
+  if (PH) return; if (race.video) drawVideoHUD(race, car, vx, vy, vw, vh); else drawHUD(race, car, vx, vy, vw, vh);
 }
 // ---------- Video Test (PC): replay of the user's RR2 recording ----------
 function videoFrame(race) { const V = RR.VIDEO_TEST; return Math.min(V.replayEnd, V.replayStart + Math.floor(race.time * 60 + 1e-6)); }
@@ -5278,6 +5431,8 @@ function frame(now) {
 }
 function tick(dt) {
   state.t += dt;
+  if (state.photo) { if (state.screen !== 'race' || !state.paused) state.photo = null; else photoUpdate(dt); }
+  if (state.spectate && state.screen !== 'race') state.spectate = false;
   chatPanel(state.net && ['carselect', 'trackselect', 'netwait', 'results', 'race'].includes(state.screen) && !state.notice && !(RR.MOBILE && ['trackselect', 'results', 'race'].includes(state.screen)), state.screen === 'trackselect' || state.screen === 'race' ? 'bl' : state.screen === 'results' ? 'bc' : '');
   if (state.songToast) state.songToast.t -= dt;
   pollPadsForMenu(dt); if (state.padToast) state.padToast.t -= dt;
@@ -5312,7 +5467,7 @@ function tick(dt) {
       const k = 1 - Math.exp(-6 * dt); if (Math.hypot(tx - cam.x, ty - cam.y) > 260) { cam.x = tx; cam.y = ty; } cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k;
       if (A.ctx) A.updateEngine(i, Math.hypot(c.vx, c.vy), c.throttle, c.slip, c.base.top);
     });
-    if (race.phase === 'finished' && race.endT <= 0) finishRace();
+    if (race.phase === 'finished' && race.endT <= 0 && !state.spectate) finishRace();
   }
 }
 function flushSkids(race) { race.skidQueue.length = 0; }
@@ -5331,6 +5486,7 @@ function render() {
     case 'drift': drawDrift(); break;
     case 'daily': drawDaily(); break;
     case 'challenges': drawChallenges(); break;
+    case 'style': drawStyle(); break;
     case 'boards': drawBoards(); break;
     case 'news': drawNews(); break;
     case 'cutscene': ctx.setTransform(S, 0, 0, S, 0, 0); state.cut.draw(ctx, VW, VH, id => carSprites[id]); break;
@@ -5346,8 +5502,10 @@ function render() {
       else { drawView(race, state.cams[0], 0, 0, VW / 2 - 1, VH); drawView(race, state.cams[1], VW / 2 + 1, 0, VW / 2 - 1, VH);
         ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = '#111'; ctx.fillRect(VW / 2 - 1, 0, 2, VH); }
       if (RR.MOBILE && !state.paused && !padList().length) drawTouchControls();
-      if (state.paused && state.pauseOpts) { ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(3,7,26,0.88)'; ctx.fillRect(0, 0, VW, VH); title('Options', 24); drawButtons(); }
-      else if (state.paused) { ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, VW, VH); title('Paused', RR.MOBILE ? 112 : 56); drawButtons(); if (!RR.MOBILE) hintText('1-7 change song   |   - / + music volume   |   [ / ] sound volume', 205); else hintText('Tap the left / right side of Song to change it', 372); }
+      if (state.photo) photoRender();
+      else if (state.spectate) drawSpectate(race);
+      else if (state.paused && state.pauseOpts) { ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(3,7,26,0.88)'; ctx.fillRect(0, 0, VW, VH); title('Options', 24); drawButtons(); }
+      else if (state.paused) { ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, VW, VH); title('Paused', RR.MOBILE ? 112 : 56); drawButtons(); if (!RR.MOBILE) hintText('1-7 change song   |   - / + music volume   |   [ / ] sound volume', 242); else hintText('Tap the left / right side of Song to change it', 402); }
       break;
     }
     case 'results': drawResults(); break;
@@ -5358,6 +5516,318 @@ function render() {
   if (state.notice) drawNotice();
 }
 requestAnimationFrame(frame);
+
+// ================= v1.8: smoke colours & trails, photo mode, replay clips, spectate, rematch, clubs, secrets =================
+// ---- unlocks (only by finishing the Smoke & Trails challenges) ----
+const FXS = { drift: 0, air: 0 };
+function fxDone() { save.fxDone = save.fxDone || []; return save.fxDone; }
+function fxStats() {
+  const s = stats0();
+  if (FXS.drift || FXS.air) { s.driftSec = (s.driftSec || 0) + FXS.drift; s.airSec = (s.airSec || 0) + FXS.air; FXS.drift = 0; FXS.air = 0; persist(); }
+  return Object.assign({}, s, { decalsDone: RR.CHALLENGES.filter(c => chDone().includes(c.id)).length, golds: Object.values(save.medals || {}).filter(m => m >= 3).length,
+    club: save.club ? 1 : 0, qwak: /qwak/i.test(myName() || '') && s.races > 0 ? 1 : 0 });
+}
+function checkFxChallenges() {
+  const st = fxStats(), done = fxDone(); let any = false;
+  for (const c of RR.FX_CHALLENGES) if (!done.includes(c.id) && (c.stat(st) || 0) >= c.goal) { done.push(c.id); any = true; toast((c.hidden ? 'SECRET FOUND: ' : 'Challenge complete: ') + c.name + '!  Unlocked: ' + RR.fxRewardName(c)); }
+  if (any) persist();
+}
+function fxUnlockFor(kind, k) { return RR.FX_CHALLENGES.find(c => c[kind] === k); }
+function smokeUnlocked(k) { if (k === 'white') return true; const c = fxUnlockFor('smoke', k); return !!c && fxDone().includes(c.id); }
+function trailUnlocked(k) { if (k === 'none') return true; const c = fxUnlockFor('trail', k); return !!c && fxDone().includes(c.id); }
+function mySmoke() { return save.smoke && RR.SMOKES[save.smoke] && smokeUnlocked(save.smoke) ? save.smoke : 'white'; }
+function myTrail() { return save.trail && RR.TRAILS[save.trail] && trailUnlocked(save.trail) ? save.trail : 'none'; }
+const smokeCache = {};
+const RAINBOW_RGB = ['255,70,70', '255,170,40', '255,240,60', '80,230,110', '60,150,255', '180,90,255'];
+function smokeSpr(k, r) {
+  const S0 = RR.SMOKES[k]; if (!S0) return PUFF.smoke;
+  const rgb = S0.rainbow ? RAINBOW_RGB[((r || 0) * 6 / 6.29) | 0] : S0.rgb;
+  return smokeCache[rgb] || (smokeCache[rgb] = softSprite(rgb));
+}
+// ---- trails: a short history of where each car's tail has been ----
+function trailUpdate(c, dt) {
+  if (!c.trail || (c.puppet === 'ghost' && !c.replay)) return;
+  const tp = c.trailPts || (c.trailPts = []), fx = Math.sin(c.a), fy = -Math.cos(c.a);
+  for (const p of tp) p.t += dt;
+  while (tp.length && tp[0].t > 0.55) tp.shift();
+  if (Math.hypot(c.vx, c.vy) > 50 || c.air > 0) tp.push({ x: c.x - fx * 12, y: c.y - fy * 12, cx: c.x, cy: c.y, a: c.a, t: 0, r: Math.random() });
+  if (tp.length > 100) tp.shift();
+}
+function drawTrails(race, inView) { for (const c of race.cars) if (c.trailPts && c.trailPts.length > 1 && inView(c.x, c.y, 160)) drawTrailPts(c.trail, c.trailPts, c.sprite, 1); }
+function drawTrailPts(kind, tp, sprite, sc) {
+  const L = 0.55, t = state.t || performance.now() / 1000; ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const seg = (fn) => { for (let i = 1; i < tp.length; i++) { const p0 = tp[i - 1], p1 = tp[i]; if (Math.hypot(p1.x - p0.x, p1.y - p0.y) > 40 * sc) continue; fn(p0, p1, Math.max(0, 1 - p1.t / L), i); } };
+  if (kind === 'neon') {
+    ctx.globalCompositeOperation = 'lighter';
+    seg((a, b, f) => { ctx.strokeStyle = `rgba(40,200,255,${0.28 * f})`; ctx.lineWidth = 8 * sc; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); });
+    seg((a, b, f) => { ctx.strokeStyle = `rgba(200,250,255,${0.9 * f})`; ctx.lineWidth = 2.2 * sc; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); });
+  } else if (kind === 'rainbow') {
+    ctx.globalCompositeOperation = 'lighter';
+    seg((a, b, f, i) => { ctx.strokeStyle = `hsla(${(i * 14 + t * 240) % 360},100%,60%,${0.75 * f})`; ctx.lineWidth = 5 * sc; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); });
+  } else if (kind === 'fire') {
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of tp) { const f = Math.max(0, 1 - p.t / L), r = (1.5 + 4.5 * f) * sc * (0.7 + p.r * 0.6); ctx.fillStyle = `rgba(255,${(60 + 150 * f) | 0},${(20 * f) | 0},${0.45 * f})`; ctx.beginPath(); ctx.arc(p.x + (p.r - 0.5) * 4 * sc, p.y + (p.r - 0.5) * 4 * sc, r, 0, 7); ctx.fill(); }
+  } else if (kind === 'sparkle') {
+    ctx.globalCompositeOperation = 'lighter';
+    tp.forEach((p, i) => { if (i % 2) return; const f = Math.max(0, 1 - p.t / L), tw = 0.5 + 0.5 * Math.sin(t * 22 + p.r * 30); if (tw < 0.2) return;
+      const x = p.x + (p.r - 0.5) * 12 * sc, y = p.y + (((p.r * 7) % 1) - 0.5) * 12 * sc, s2 = (1.2 + 2.2 * f * tw) * sc;
+      ctx.fillStyle = `rgba(255,240,170,${f * tw})`; ctx.beginPath(); ctx.moveTo(x, y - s2 * 2); ctx.lineTo(x + s2 * 0.5, y); ctx.lineTo(x, y + s2 * 2); ctx.lineTo(x - s2 * 0.5, y); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x - s2 * 2, y); ctx.lineTo(x, y + s2 * 0.5); ctx.lineTo(x + s2 * 2, y); ctx.lineTo(x, y - s2 * 0.5); ctx.closePath(); ctx.fill(); });
+  } else if (kind === 'pixel') {
+    const P = ['#ff3a3a', '#ffcf20', '#3aff6a', '#3a9aff', '#ff3aff']; const g = 4 * sc;
+    tp.forEach((p, i) => { if (i % 3) return; const f = Math.max(0, 1 - p.t / L); ctx.globalAlpha = f; ctx.fillStyle = P[(i / 3 | 0) % P.length]; ctx.fillRect(Math.round(p.x / g) * g - g / 2, Math.round(p.y / g) * g - g / 2, g, g); });
+  } else if (kind === 'ghost' && sprite) {
+    ctx.imageSmoothingEnabled = true;
+    for (let i = tp.length - 8; i >= 0; i -= 8) { const p = tp[i], f = Math.max(0, 1 - p.t / L); ctx.save(); ctx.translate(p.cx, p.cy); ctx.rotate(p.a); ctx.globalAlpha = 0.3 * f; ctx.filter = 'brightness(1.6) saturate(0.4)'; ctx.drawImage(sprite, -10 * sc, -13 * sc, 20 * sc, 26 * sc); ctx.restore(); }
+  }
+  ctx.restore();
+}
+// ---- Smoke & Trail picker (from Choose Your Wheels) ----
+function styleLayout() {
+  const M = RR.MOBILE, sm = RR.SMOKE_ORDER, tr = RR.TRAIL_ORDER, out = [];
+  sm.forEach((k, i) => out.push(M ? { kind: 'smoke', k, x: 10 + (i % 2) * 128, y: 196 + ((i / 2) | 0) * 26, w: 122, h: 23 } : { kind: 'smoke', k, x: 188 + (i % 5) * 58, y: 50 + ((i / 5) | 0) * 29, w: 54, h: 25 }));
+  tr.forEach((k, i) => out.push(M ? { kind: 'trail', k, x: 10 + (i % 2) * 128, y: 344 + ((i / 2) | 0) * 24, w: 122, h: 21 } : { kind: 'trail', k, x: 188 + (i % 4) * 72, y: 136 + ((i / 4) | 0) * 29, w: 68, h: 25 }));
+  return out;
+}
+function styleLockMsg(kind, k) {
+  const c = fxUnlockFor(kind, k); if (!c) return '';
+  return 'Locked!\nEarn it in Challenges > Smoke & Trails:\n' + (c.hidden && !fxDone().includes(c.id) ? '"???" - a secret challenge.\nHint: ' + c.hint : '"' + c.name + '" - ' + c.desc);
+}
+function styleButtons() {
+  const out = styleLayout().map(o => {
+    const name = (o.kind === 'smoke' ? RR.SMOKES : RR.TRAILS)[o.k].name, ok = o.kind === 'smoke' ? smokeUnlocked(o.k) : trailUnlocked(o.k);
+    return B(o.x, o.y, o.w, o.h, ok ? name : '?', () => { if (!ok) { notice(styleLockMsg(o.kind, o.k)); return; } save[o.kind] = o.k; persist(); A.play('pickup'); }, { style: o, blue: ok && (o.kind === 'smoke' ? mySmoke() : myTrail()) === o.k });
+  });
+  out.push(RR.MOBILE ? B(85, 440, 100, 30, 'Back', () => { go('carselect'); }) : B(16, 226, 74, 34, 'Back', () => { go('carselect'); }));
+  return out;
+}
+function drawStyle() {
+  menuBG(); ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(10,0,20,0.55)'; ctx.fillRect(0, 0, VW, VH);
+  title('Smoke & Trails', RR.MOBILE ? 24 : 18); ctx.setTransform(S, 0, 0, S, 0, 0);
+  const M = RR.MOBILE, t = performance.now() / 1000;
+  ctx.font = 'bold 8px "Trebuchet MS",sans-serif'; ctx.fillStyle = '#ffcf40'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('TYRE SMOKE (drifting)', M ? 12 : 190, M ? 188 : 42); ctx.fillText('TRAIL (at speed)', M ? 12 : 190, M ? 336 : 128);
+  ctx.fillStyle = '#d8c8ff'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Only earned from Challenges > Smoke & Trails. Other Wi-Fi players see yours!', M ? VW / 2 : 330, M ? 50 : 202);
+  // preview: the car laps a little circle with its trail and smoke
+  const px = M ? VW / 2 : 92, py = M ? 120 : 120, R = M ? 46 : 52, sc = 1.3, car = decalSprite(state.carSel[0]);
+  ctx.fillStyle = 'rgba(40,40,46,0.9)'; ctx.beginPath(); ctx.arc(px, py, R + 16, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(60,110,40,0.95)'; ctx.beginPath(); ctx.arc(px, py, R - 16, 0, 7); ctx.fill();
+  const pos = tt => { const a = tt * 2.2; return { x: px + Math.cos(a) * R, y: py + Math.sin(a) * R, a: a + Math.PI }; };
+  const tp = []; for (let k = 30; k >= 0; k--) { const tt = t - k * 0.018, p = pos(tt), fx = Math.sin(p.a), fy = -Math.cos(p.a); tp.push({ x: p.x - fx * 12 * sc, y: p.y - fy * 12 * sc, cx: p.x, cy: p.y, a: p.a, t: k * 0.018, r: (k * 0.618) % 1 }); }
+  if (myTrail() !== 'none') drawTrailPts(myTrail(), tp, car, sc);
+  const sk = mySmoke(); ctx.imageSmoothingEnabled = true;
+  for (let k = 1; k < 9; k++) { const p = tp[30 - k * 3] || tp[0], f = 1 - k / 9; ctx.globalAlpha = 0.6 * f; const sp = sk === 'white' ? PUFF.smoke : smokeSpr(sk, (k * 0.9) % 6.28), r = (5 + k * 2.2); ctx.drawImage(sp, p.x - r + Math.sin(k * 3) * 4, p.y - r + Math.cos(k * 2) * 4, r * 2, r * 2); }
+  ctx.globalAlpha = 1; const p = pos(t); ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a + 0.35); ctx.drawImage(car, -10 * sc, -13 * sc, 20 * sc, 26 * sc); ctx.restore();
+  ctx.restore(); drawButtons();
+  // colour dots / locks on the buttons
+  ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0);
+  for (const b of buttons()) { const o = b.style; if (!o) continue; const ok = o.kind === 'smoke' ? smokeUnlocked(o.k) : trailUnlocked(o.k);
+    if (!ok) { ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(b.x, b.y, b.w, b.h); drawLock(b.x + b.w / 2, b.y + b.h / 2); continue; }
+    if (o.kind === 'smoke') { const S0 = RR.SMOKES[o.k]; if (S0.rainbow) { const g = ctx.createLinearGradient(b.x + 3, 0, b.x + 11, 0); RAINBOW_RGB.forEach((c, i) => g.addColorStop(i / 5, 'rgb(' + c + ')')); ctx.fillStyle = g; } else ctx.fillStyle = 'rgb(' + S0.rgb + ')'; ctx.beginPath(); ctx.arc(b.x + 7, b.y + b.h / 2, 3.2, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 0.6; ctx.stroke(); } }
+  ctx.restore();
+}
+function drawLock(x, y) {
+  ctx.save(); ctx.strokeStyle = '#ffcf40'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(x, y - 2, 2.6, Math.PI, 0); ctx.stroke();
+  ctx.fillStyle = '#ffcf40'; ctx.fillRect(x - 4, y - 1.5, 8, 6); ctx.fillStyle = '#5a3a00'; ctx.fillRect(x - 0.6, y + 0.5, 1.2, 2.2); ctx.restore();
+}
+// ---- Challenges screen: two pages (decals / smoke & trails) ----
+function drawChallenges() {
+  menuBG(); ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0);
+  ctx.fillStyle = 'rgba(10,0,0,0.55)'; ctx.fillRect(0, 0, VW, VH);
+  title('Challenges', RR.MOBILE ? 24 : 18); ctx.setTransform(S, 0, 0, S, 0, 0);
+  const fxp = !!state.chPage, st = fxp ? fxStats() : allStats(), done = fxp ? fxDone() : chDone(), M = RR.MOBILE, L = fxp ? RR.FX_CHALLENGES : RR.CHALLENGES;
+  ctx.fillStyle = '#ffd8c8'; ctx.font = 'bold 8px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(L.filter(c => done.includes(c.id)).length + ' / ' + L.length + ' complete  -  ' + (fxp ? (M ? 'unlock smoke colours & trails' : 'each unlocks a tyre smoke colour or trail (3 are secret!)') : (M ? 'each unlocks a car decal' : 'each one unlocks a car decal (pick it in Choose Your Wheels)')), VW / 2, M ? 44 : 33);
+  L.forEach((c, i) => {
+    const h = M ? (fxp ? 25 : 28) : (fxp ? 26 : 30), gap = M ? (fxp ? 1 : 2) : 3;
+    const col = M ? 0 : i % 2, row = M ? i : (i / 2) | 0, w = M ? 254 : 228, x = M ? 8 : 10 + col * 232, y = (M ? 52 : 40) + row * (h + gap);
+    const ok = done.includes(c.id), v = Math.min(c.goal, c.stat(st) || 0), secret = c.hidden && !ok;
+    ctx.fillStyle = ok ? 'rgba(40,110,40,0.85)' : secret ? 'rgba(30,10,60,0.85)' : 'rgba(60,10,10,0.85)'; roundRect(ctx, x, y, w, h, 6); ctx.fill();
+    ctx.strokeStyle = ok ? '#7cff6a' : secret ? 'rgba(180,120,255,0.7)' : 'rgba(255,90,70,0.6)'; ctx.lineWidth = 1; roundRect(ctx, x, y, w, h, 6); ctx.stroke();
+    if (!fxp) { const spr = ok ? decalSprite(5, c.decal) : carSprites[5]; ctx.save(); ctx.translate(x + 15, y + h / 2); ctx.rotate(Math.PI / 2); ctx.globalAlpha = ok ? 1 : 0.35; ctx.imageSmoothingEnabled = true; ctx.drawImage(spr, -9, -11.7, 18, 23.4); ctx.restore(); }
+    else if (secret) { ctx.fillStyle = '#c8a0ff'; ctx.font = 'bold 12px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.fillText('?', x + 15, y + h / 2 + 1); }
+    else { ctx.globalAlpha = ok ? 1 : 0.45; if (c.smoke) { ctx.imageSmoothingEnabled = true; ctx.drawImage(smokeSpr(c.smoke, (performance.now() / 300) % 6.28), x + 4, y + h / 2 - 9, 18, 18); }
+      if (c.trail) { ctx.save(); const tp = []; for (let k = 10; k >= 0; k--) tp.push({ x: x + 4 + (10 - k) * 2.2, y: y + h / 2 + Math.sin(k * 0.6 + performance.now() / 200) * 2, cx: x + 20, cy: y + h / 2, a: Math.PI / 2, t: k * 0.05, r: (k * 0.618) % 1 }); drawTrailPts(c.trail, tp, carSprites[5], 0.6); ctx.restore(); }
+      ctx.globalAlpha = 1; }
+    ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.fillText(secret ? '??? Secret' : c.name, x + 32, y + (fxp ? 8 : 9));
+    ctx.fillStyle = '#ffd0c0'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.fillText(secret ? 'Hint: ' + c.hint : c.desc + '  ->  ' + (fxp ? RR.fxRewardName(c) : RR.DECALS[c.decal].name), x + 32, y + (fxp ? 18 : 19));
+    if (!secret) { const bw = 44; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x + w - bw - 6, y + 6, bw, 5); ctx.fillStyle = ok ? '#7cff6a' : '#ffb020'; ctx.fillRect(x + w - bw - 6, y + 6, bw * v / c.goal, 5);
+      ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Trebuchet MS",sans-serif'; ctx.fillText(ok ? 'DONE' : (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v) + ' / ' + (c.goal >= 1000 ? c.goal / 1000 + 'k' : c.goal), x + w - 6, y + (fxp ? 18 : 20)); }
+  });
+  ctx.restore(); drawButtons();
+}
+// ---- secrets: the classic code on the main menu, or 7 taps on the logo ----
+const SECRET = { seq: [], taps: [] };
+const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'];
+function secretKey(code) {
+  if (state.screen !== 'menu') { SECRET.seq.length = 0; return false; }
+  SECRET.seq.push(code); if (SECRET.seq.length > KONAMI.length) SECRET.seq.shift();
+  if (SECRET.seq.join() === KONAMI.join()) { SECRET.seq.length = 0; secretFound(); return true; }
+  return false;
+}
+function secretTap(x, y) {
+  if (state.screen !== 'menu') return false;
+  const lx = VW / 2, ly = RR.MOBILE ? 120 : 56, now = performance.now();
+  if (Math.abs(x - lx) > 90 || Math.abs(y - ly) > 30) return false;
+  SECRET.taps = SECRET.taps.filter(t => now - t < 3000); SECRET.taps.push(now);
+  if (SECRET.taps.length >= 7) { SECRET.taps = []; secretFound(); }
+  return true;
+}
+function secretFound() {
+  const s = stats0(); if (!s.konami) { s.konami = 1; persist(); }
+  A.play('nitro'); checkChallenges();
+  if (!fxDone().includes('sx_code')) return; notice('*** OLD SCHOOL ***\nSecret found! Pixel trail unlocked.\nPick it in Choose Your Wheels.');
+}
+// ---- Photo mode (pause menu) ----
+const PHOTO_FILTERS = [['None', ''], ['Retro', 'saturate(1.35) contrast(1.1)'], ['Sepia', 'sepia(0.85) contrast(1.05)'], ['B&W', 'grayscale(1) contrast(1.15)'], ['Vivid', 'saturate(1.8) contrast(1.12)'], ['Dusk', 'sepia(0.35) hue-rotate(-25deg) saturate(1.4) brightness(0.9)']];
+function photoStart() {
+  if (state.race && state.race.mode === 'net') { notice('Photo mode can\'t freeze a Wi-Fi race.\nTry it in any other race!'); return; }
+  state.photo = { zoom: 1, ox: 0, oy: 0, filter: 0, hide: false }; state.focus = 0;
+}
+function photoExit() { state.photo = null; state.focus = 4; }
+function photoZoom(f) { const P = state.photo; if (P) P.zoom = Math.max(0.5, Math.min(3, P.zoom * f)); }
+function photoButtons() {
+  const P = state.photo; if (P.hide) return [];
+  const F = 'Filter: ' + PHOTO_FILTERS[P.filter][0];
+  if (RR.MOBILE) return [B(6, 412, 80, 28, 'Back', photoExit), B(92, 412, 40, 28, '-', () => photoZoom(1 / 1.25)), B(138, 412, 40, 28, '+', () => photoZoom(1.25)), B(184, 412, 80, 28, 'Hide UI', () => { P.hide = true; }),
+    B(6, 446, 122, 28, F, () => { P.filter = (P.filter + 1) % PHOTO_FILTERS.length; }), B(134, 446, 130, 28, 'Save Photo', () => { state.photoShot = true; }, { blue: 1 })];
+  return [B(8, 246, 56, 20, 'Back', photoExit), B(70, 246, 30, 20, '-', () => photoZoom(1 / 1.25)), B(104, 246, 30, 20, '+', () => photoZoom(1.25)),
+    B(140, 246, 104, 20, F, () => { P.filter = (P.filter + 1) % PHOTO_FILTERS.length; }), B(250, 246, 74, 20, 'Hide UI', () => { P.hide = true; }), B(380, 246, 92, 20, 'Save Photo', () => { state.photoShot = true; }, { blue: 1 })];
+}
+const photoTmp = document.createElement('canvas');
+function photoRender() {
+  const P = state.photo, f = PHOTO_FILTERS[P.filter][1];
+  if (f) { photoTmp.width = canvas.width; photoTmp.height = canvas.height; const t = photoTmp.getContext('2d'); t.drawImage(canvas, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.filter = f; ctx.drawImage(photoTmp, 0, 0); ctx.filter = 'none';
+    if (P.filter === 1) { ctx.globalAlpha = 0.12; ctx.fillStyle = '#000'; for (let y = 0; y < canvas.height; y += Math.max(2, (S * 2) | 0)) ctx.fillRect(0, y, canvas.width, Math.max(1, S | 0)); ctx.globalAlpha = 1; } }
+  ctx.setTransform(S, 0, 0, S, 0, 0);
+  const tag = 'RETRO RACING', w = RR.textWidth(tag, 1); ctx.fillStyle = 'rgba(0,0,0,0.35)'; roundRect(ctx, VW - w - 14, 6, w + 8, 13, 3); ctx.fill(); RR.pixText(ctx, tag, VW - w - 10, 9, 1, 'rgba(255,255,255,0.85)');
+  if (state.photoShot) { state.photoShot = false; canvas.toBlob(b => { if (b) shareOrDownload(b, 'retro-racing-photo.png', 'Photo saved!'); }, 'image/png'); }
+  if (!P.hide) { drawButtons(); hintText(RR.MOBILE ? 'Drag to move the camera' : 'Drag or arrow keys: move   |   mouse wheel / - +: zoom   |   H: hide UI', RR.MOBILE ? 404 : 232); }
+}
+function shareOrDownload(blob, name, msg) {
+  const file = typeof File === 'function' ? new File([blob], name, { type: blob.type }) : null;
+  if (RR.MOBILE && file && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: 'Retro Racing' }).then(() => toast(msg)).catch(() => {}); return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 20000);
+  toast(msg + '  (' + name + ')');
+}
+const PDRAG = { on: false };
+canvas.addEventListener('pointerdown', e => { if (!state.photo) return; const [x, y] = toVirtual(e); if (hitButton(x, y) >= 0) return; if (state.photo.hide) { state.photo.hide = false; return; } Object.assign(PDRAG, { on: true, x, y, ox: state.photo.ox, oy: state.photo.oy }); });
+window.addEventListener('pointermove', e => { if (!state.photo || !PDRAG.on) return; const [x, y] = toVirtual(e), k = RR.ZOOM / state.photo.zoom; state.photo.ox = PDRAG.ox - (x - PDRAG.x) * k; state.photo.oy = PDRAG.oy - (y - PDRAG.y) * k; });
+window.addEventListener('pointerup', () => { PDRAG.on = false; });
+canvas.addEventListener('wheel', e => { if (!state.photo) return; e.preventDefault(); photoZoom(e.deltaY < 0 ? 1.12 : 1 / 1.12); }, { passive: false });
+function photoUpdate(dt) {
+  const P = state.photo; if (!P) return; const k = 260 * dt * RR.ZOOM / P.zoom;
+  if (keys.ArrowLeft || keys.KeyA) P.ox -= k; if (keys.ArrowRight || keys.KeyD) P.ox += k; if (keys.ArrowUp || keys.KeyW) P.oy -= k; if (keys.ArrowDown || keys.KeyS) P.oy += k;
+  const T = state.race && state.race.T; if (T) { const c = state.cams[0]; P.ox = Math.max(-c.x, Math.min(T.width - c.x, P.ox)); P.oy = Math.max(-c.y, Math.min(T.height - c.y, P.oy)); }
+}
+function photoKey(code) {
+  if (code === 'Escape' || code === 'Backspace') { photoExit(); return true; }
+  if (code === 'KeyH') { state.photo.hide = !state.photo.hide; return true; }
+  if (code === 'Equal' || code === 'NumpadAdd') { photoZoom(1.25); return true; }
+  if (code === 'Minus' || code === 'NumpadSubtract') { photoZoom(1 / 1.25); return true; }
+  if (code === 'KeyF') { state.photo.filter = (state.photo.filter + 1) % PHOTO_FILTERS.length; return true; }
+  if (/^Arrow|^Key[WASD]$/.test(code)) return true;
+  if (state.photo.hide) { state.photo.hide = false; return true; }
+  return false;
+}
+// ---- Replay clips: record the replay as a video file to keep or share ----
+const CLIP = { rec: null };
+function clipToggle() {
+  if (CLIP.rec) { CLIP.rec.stop(); return; }
+  if (typeof MediaRecorder !== 'function' || !canvas.captureStream) { notice('Sorry, this browser can\'t record video.\nTry Chrome or Edge.'); return; }
+  const B0 = state.replayBack; if (!B0) return;
+  const cam = state.replayCam; state.race = B0.race; state.result = B0.result; startReplay();
+  if (state.race && state.race.replay) { state.replayCam = cam % state.race.cars.length; state.cams[0].car = state.race.cars[state.replayCam]; state.cams[0].x = state.cams[0].car.x; state.cams[0].y = state.cams[0].car.y; }
+  const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'], type = types.find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+  let rec; try { rec = new MediaRecorder(canvas.captureStream(30), type ? { mimeType: type, videoBitsPerSecond: 4e6 } : {}); } catch (e) { notice('Sorry, recording failed to start.'); return; }
+  const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = () => { CLIP.rec = null; const blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' }); if (blob.size > 1000) shareOrDownload(blob, 'retro-racing-replay.' + (/mp4/.test(blob.type) ? 'mp4' : 'webm'), 'Replay clip saved!'); };
+  rec.start(500); CLIP.rec = rec;
+}
+function clipStopIfAny() { if (CLIP.rec) try { CLIP.rec.stop(); } catch (e) {} }
+// ---- Spectate a Wi-Fi race after you finish ----
+function specCars() { const r = state.race; return r ? r.cars.filter(c => c.player !== 0).sort((a, b) => (a.netBot ? 1 : 0) - (b.netBot ? 1 : 0)) : []; }
+function canSpectate() { const r = state.race; return !!(r && r.mode === 'net' && specCars().some(c => !c.finished && !c.left)); }
+function spectateStart() {
+  const L = specCars(); if (!L.length) return;
+  const t = L.find(c => !c.finished && !c.left) || L[0];
+  state.spectate = true; state.specBack = state.focus; state.cams[0].car = t; state.cams[0].x = t.x; state.cams[0].y = t.y; state.screen = 'race'; state.paused = false; A.setEngines(1);
+}
+function spectateSwitch(d) { const L = specCars(); if (!L.length) return; const i = L.indexOf(state.cams[0].car); state.cams[0].car = L[(i + d + L.length) % L.length]; A.play('menu'); }
+function spectateEnd() {
+  const r = state.race; state.spectate = false; if (!r) { go('menu'); return; }
+  state.cams[0].car = r.cars.find(c => c.player === 0); state.screen = 'results'; state.focus = state.specBack || 0; A.stopEngines();
+  if (state.result && state.result.times) r.cars.forEach(c => { if (c.finished && c.netId != null && state.result.times[c.netId] == null) state.result.times[c.netId] = c.finishTime; });
+}
+function drawSpectate(race) {
+  const c = state.cams[0].car, M = RR.MOBILE, nm = c.netId != null && !c.netBot ? pname(c.netId) : c.liv.name, all = specCars().every(k => k.finished || k.left);
+  ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.fillStyle = 'rgba(0,0,0,0.6)'; roundRect(ctx, VW / 2 - 110, VH - (M ? 150 : 40), 220, 30, 8); ctx.fill();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#7fe0ff'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif';
+  ctx.fillText('SPECTATING  ' + nm + (c.finished ? '  (finished)' : ''), VW / 2, VH - (M ? 143 : 33));
+  ctx.fillStyle = '#ddd'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.fillText(all ? 'Everyone has finished - ' + (M ? 'tap the middle for results' : 'Esc / Enter: results') : M ? 'Tap left / right: other cars - tap middle: results' : 'Left / Right: other cars   -   Esc / Enter: results', VW / 2, VH - (M ? 132 : 22));
+  ctx.restore();
+}
+// ---- Rematch (Wi-Fi) ----
+function netRematch() {
+  const L = NET.lastPick; if (!L) { notice('Pick the next race instead.'); return; }
+  rivalsOnce(); state.spectate = false; netEvent({ type: 'back' }); state.race = null; netPickRace(L.i, L.def);
+}
+function netAskRematch() { const R = state.result; if (!R || R.wantRematch) return; R.wantRematch = true; const text = 'Rematch? I\'m in!'; netEvent({ type: 'chat', text }); addChat(NET.myId, text); }
+// ---- Clubs / crews (shared online: Supabase tables clubs + club_members) ----
+const CLUBS = { tags: {}, asked: {} };
+function myClubTag() { return save.club && save.club.tag || null; }
+function clubApi(path, body) {
+  return fetch(RR.LB.url + path, body ? { method: 'POST', headers: { apikey: RR.LB.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { headers: { apikey: RR.LB.key }, cache: 'no-store' })
+    .then(r => r.ok ? r.json() : r.json().then(j => { throw new Error(j && j.message || 'error'); }, () => { throw new Error('error'); }));
+}
+function clubTags(devs) {   // look up club tags for names on the leaderboards (cached)
+  const need = [...new Set(devs)].filter(d => /^[a-z0-9]{4,12}$/.test(d) && !CLUBS.asked[d]); if (!need.length) return;
+  need.forEach(d => CLUBS.asked[d] = 1);
+  clubApi('club_members?select=dev,tag&dev=in.(' + need.join(',') + ')').then(rows => { (rows || []).forEach(r => { CLUBS.tags[r.dev] = r.tag; }); }).catch(() => {});
+}
+function clubSync() {   // keep the saved club in step with the server (someone may have left, or the club was closed)
+  if (!save.club) return; clubApi('club_members?select=tag&dev=eq.' + devId()).then(r => { const t = r && r[0] && r[0].tag; if (!t) { save.club = null; persist(); } else if (t !== save.club.tag) { save.club.tag = t; persist(); } }).catch(() => {});
+}
+setTimeout(clubSync, 4000);
+function clubOverlay() {
+  RR.Editor.css();
+  const d = document.createElement('div'); d.id = 'rr-idea';
+  d.style.cssText = 'position:fixed;inset:0;z-index:60;background:rgba(5,10,40,0.92);display:flex;align-items:center;justify-content:center;font-family:"Trebuchet MS","Segoe UI",sans-serif;color:#fff;user-select:text;-webkit-user-select:text';
+  document.body.appendChild(d);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const box = 'background:#0d1a4a;border:3px solid #5d7cff;border-radius:14px;padding:16px 18px;width:min(560px,94vw);max-height:92vh;overflow:auto;box-sizing:border-box';
+  const inp = 'font:bold 16px "Trebuchet MS",sans-serif;padding:6px 8px;border-radius:8px;border:2px solid #5d7cff;background:#050c2a;color:#ffcf40;box-sizing:border-box';
+  const close = () => { d.remove(); };
+  const msgs = { taken: 'That tag is taken - try another.', badtag: 'Tags are 2-4 letters or numbers.', badname: 'Give the club a name (2+ letters).', limit: 'You have made too many clubs.', none: 'No club has that tag.', full: 'That club is full (30 members).', bad: 'Something went wrong.' };
+  const render = (status) => {
+    const c = save.club;
+    d.innerHTML = '<div style="' + box + '"><div style="display:flex;align-items:center;gap:8px"><h2 style="margin:0;flex:1">Clubs</h2><button class="rr-b" id="cx">Close</button></div>' +
+      '<p style="margin:4px 0 10px;color:#bcd0ff;font-size:13px">Team up with friends! Your club tag shows next to your name on the leaderboards and in Wi-Fi rooms. Clubs earn points for every top-10 time their members set.</p>' +
+      (c ? '<div class="rr-card" style="margin-bottom:8px"><div style="flex:1"><div class="nm">[' + esc(c.tag) + '] ' + esc(c.name) + '</div><div class="meta" id="mem">Loading members...</div></div><button class="rr-b" id="lv">Leave</button></div>'
+         : '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px"><b style="width:52px">Join</b><input id="jt" maxlength="4" placeholder="TAG" style="' + inp + ';width:90px;text-transform:uppercase"><button class="rr-b green" id="jb">Join club</button></div>' +
+           '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px"><b style="width:52px">Start</b><input id="ct" maxlength="4" placeholder="TAG" style="' + inp + ';width:90px;text-transform:uppercase"><input id="cn" maxlength="18" placeholder="Club name" style="' + inp + ';width:170px"><button class="rr-b blue" id="cb">Start club</button></div>') +
+      '<div id="st" style="color:#ffcf40;min-height:18px;font-size:13px">' + esc(status || '') + '</div>' +
+      '<h3 style="margin:8px 0 4px">Top clubs</h3><div id="cl" style="font-size:14px">Loading...</div></div>';
+    d.querySelector('#cx').onclick = close;
+    const st = d.querySelector('#st'), busy = t => { st.textContent = t; };
+    const done = (r, tag, name) => { if (r === 'ok') { save.club = { tag: tag.toUpperCase(), name }; persist(); CLUBS.tags[devId()] = save.club.tag; checkChallenges(); render('Welcome to [' + save.club.tag + ']!'); } else busy(msgs[r] || 'Could not do that right now.'); };
+    if (c) {
+      d.querySelector('#lv').onclick = () => { busy('Leaving...'); clubApi('rpc/leave_club', { p_dev: devId() }).then(() => { save.club = null; persist(); delete CLUBS.tags[devId()]; render('You left the club.'); }).catch(() => busy('Could not reach the server.')); };
+      clubApi('club_members?select=name&tag=eq.' + encodeURIComponent(c.tag) + '&order=joined_at.asc&limit=30').then(r => { const m = d.querySelector('#mem'); if (m) m.textContent = (r || []).length + ' member' + ((r || []).length === 1 ? '' : 's') + ': ' + (r || []).map(x => cleanName(x.name) || 'Anonymous').join(', '); }).catch(() => {});
+    } else {
+      d.querySelector('#jb').onclick = () => { const t = d.querySelector('#jt').value.trim().toUpperCase(); if (!/^[A-Z0-9]{2,4}$/.test(t)) { busy(msgs.badtag); return; } busy('Joining...');
+        clubApi('rpc/join_club', { p_tag: t, p_dev: devId(), p_who: myName() || 'Anonymous' }).then(r => r === 'ok' ? clubApi('clubs?select=name&tag=eq.' + t).then(x => done('ok', t, (x && x[0] && x[0].name) || t)) : done(r)).catch(() => busy('Could not reach the server.')); };
+      d.querySelector('#cb').onclick = () => { const t = d.querySelector('#ct').value.trim().toUpperCase(), n = d.querySelector('#cn').value.trim(); if (!/^[A-Z0-9]{2,4}$/.test(t)) { busy(msgs.badtag); return; } busy('Starting your club...');
+        clubApi('rpc/create_club', { p_tag: t, p_name: n, p_dev: devId(), p_who: myName() || 'Anonymous' }).then(r => done(r, t, n)).catch(() => busy('Could not reach the server.')); };
+    }
+    clubApi('club_board?select=tag,name,members,pts&order=pts.desc,members.desc&limit=20').then(rows => {
+      const cl = d.querySelector('#cl'); if (!cl) return;
+      if (!rows || !rows.length) { cl.innerHTML = '<span style="color:#ffb0a0">No clubs yet - start the first one!</span>'; return; }
+      cl.innerHTML = '<table style="width:100%;border-collapse:collapse">' + rows.map((r, i) => '<tr style="background:' + (i % 2 ? 'transparent' : 'rgba(255,255,255,0.05)') + (save.club && save.club.tag === r.tag ? ';color:#7cff6a' : '') + '"><td style="padding:3px 6px;width:24px">' + (i + 1) + '.</td><td style="padding:3px 6px"><b>[' + esc(r.tag) + ']</b> ' + esc(r.name) + '</td><td style="padding:3px 6px;text-align:right">' + r.members + ' racer' + (r.members === 1 ? '' : 's') + '</td><td style="padding:3px 6px;text-align:right;color:#ffcf40">' + r.pts + ' pts</td></tr>').join('') + '</table>';
+    }).catch(() => { const cl = d.querySelector('#cl'); if (cl) cl.innerHTML = '<span style="color:#ffb0a0">Can\'t reach the club board right now (offline?).</span>'; });
+  };
+  render('');
+}
 
 // ---------------- test / debug hooks ----------------
 RR.test = {
