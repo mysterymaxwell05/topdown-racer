@@ -31,7 +31,7 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
-RR.VERSION = '1.8.0';
+RR.VERSION = '1.8.1';
 RR.AI_DRIFT = { grip: 1, turn: 1, brake: 1, bendFrom: 0.2, bendSpan: 0.35, minSpeed: 100, edge: 0.92 };   // bots slide only in real corners, ease off near the road edge   // bots: lower grip / sharper turn-in = more sliding in corners
 RR.RUBBER = { close: 160, ramp: 200, boost: 0.035, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
 
@@ -1566,7 +1566,7 @@ function nearIdx(T, x, y) { let best = 0, bd = 1e18; for (let i = 0; i < T.N; i 
 function buildStunts(race, opts) {
   const T = race.T, L = [];
   const add = (k, i, off) => { const h = T.H[i], nx = Math.cos(h), ny = Math.sin(h); L.push({ k, x: T.X[i] + nx * (off || 0), y: T.Y[i] + ny * (off || 0), h, i }); };
-  for (const [key, k] of [['boostAt', 'boost'], ['oilAt', 'oil'], ['jumpAt', 'jump'], ['bridgeAt', 'bridge']]) if (T.items && T.items[key]) T.items[key].forEach(p => { const i = nearIdx(T, p[0], p[1]); L.push({ k, x: p[0], y: p[1], h: T.H[i], i }); });
+  for (const [key, k] of [['boostAt', 'boost'], ['oilAt', 'oil'], ['jumpAt', 'jump'], ['bridgeAt', 'bridge']]) if (T.items && T.items[key]) T.items[key].forEach(p => { const i = nearIdx(T, p[0], p[1]); L.push({ k, x: p[0], y: p[1], h: T.H[i] + (k === 'boost' ? ((p[2] | 0) & 7) * Math.PI / 4 : 0), i }); });
   const A = opts.autoStunts;
   if (A) {   // place pieces on the track's own straights / corners
     const N = T.N, k = Math.max(2, Math.round(40 / T.step)), bend = new Float32Array(N);
@@ -1592,7 +1592,7 @@ function stepStunts(race, c, dt) {
     const dx = c.x - s.x, dy = c.y - s.y, along = dx * Math.sin(s.h) - dy * Math.cos(s.h), lat = dx * Math.cos(s.h) + dy * Math.sin(s.h);
     if (s.k === 'jump' ? (Math.abs(along) > 12 || Math.abs(lat) > race.T.W / 2) : (dx * dx + dy * dy > 18 * 18)) continue;
     const v = Math.hypot(c.vx, c.vy);
-    if (s.k === 'boost' && !(c.padCool > 0)) { const st = RR.carStats(c), nv = Math.min(st.top * 1.45, v + 130), k = v > 1 ? nv / v : 0; if (k) { c.vx *= k; c.vy *= k; } else { c.vx = Math.sin(c.a) * nv; c.vy = -Math.cos(c.a) * nv; } c.padCool = 0.7; race.events.push({ type: 'boostPad', car: c }); }
+    if (s.k === 'boost' && !(c.padCool > 0)) { const st = RR.carStats(c); c.vx += Math.sin(s.h) * 130; c.vy -= Math.cos(s.h) * 130; const nv = Math.hypot(c.vx, c.vy), cap = st.top * 1.45; if (nv > cap) { c.vx *= cap / nv; c.vy *= cap / nv; } c.padCool = 0.7; race.events.push({ type: 'boostPad', car: c }); }
     else if (s.k === 'oil' && !(c.oilCool > 0)) { c.oilT = 1.0; c.oilCool = 1.2; c.av += (Math.random() - 0.5) * 3; race.events.push({ type: 'oil', car: c }); }
     else if (s.k === 'jump' && v > 110 && !(c.padCool > 0)) { c.air = c.airMax = 0.35 + Math.min(0.45, v / 700); c.padCool = 1; race.events.push({ type: 'jump', car: c }); }
   }
@@ -2207,12 +2207,13 @@ function packBin(d) {
   const cuts = d.cuts || []; o.push(cuts.length); cuts.forEach(c => { o.push(c.length); c.forEach(p => o.push(h(p[0]), h(p[1]))); });
   const list = (L, extra) => { L = L || []; o.push(Math.min(255, L.length)); L.slice(0, 255).forEach(p => { o.push(q(p[0]), q(p[1])); if (extra) o.push(extra(p)); }); };
   list(d.treeAt, p => (p[2] | 0) & 255); list(d.umbAt, p => (p[2] | 0) & 255); list(d.coneAt); list(d.pickAt, p => p[2] ? String(p[2]).charCodeAt(0) & 255 : 0); list(d.lampAt);
-  list(d.boostAt); list(d.oilAt); list(d.jumpAt); list(d.bridgeAt);
+  const turned = (d.boostAt || []).some(p => p[2]); if (turned) o[0] = 4;   // v4: boost pads carry a direction
+  list(d.boostAt, turned ? p => (p[2] | 0) & 7 : null); list(d.oilAt); list(d.jumpAt); list(d.bridgeAt);
   return new Uint8Array(o);
 }
 function unpackBin(b) {
   let i = 0; const r = () => { if (i >= b.length) throw new Error('short'); return b[i++]; };
-  const ver = r(); if (ver !== 2 && ver !== 3) throw new Error('version');
+  const ver = r(); if (ver < 2 || ver > 4) throw new Error('version');
   const n = r(), name = new TextDecoder().decode(b.slice(i, i + n)); i += n;
   const d = { name, w: r(), theme: Object.keys(RR.THEMES)[r()] || 'grass' };
   const f = r(); d.time = TIMES_K[f & 3] || 'day'; d.diff = DIFF_K[(f >> 2) & 3] || 'normal'; d.auto = !!(f & 16);
@@ -2222,7 +2223,7 @@ function unpackBin(b) {
   d.cuts = []; for (let k = r(); k > 0; k--) { const c = []; for (let m = r(); m > 0; m--) c.push(pt()); d.cuts.push(c); }
   const list = extra => { const L = []; for (let k = r(); k > 0; k--) { const p = it(); if (extra) p.push(extra(r())); L.push(p); } return L; };
   d.treeAt = list(v => v); d.umbAt = list(v => v); d.coneAt = list(); d.pickAt = list(v => v ? String.fromCharCode(v) : ''); d.lampAt = list();
-  if (ver >= 3) { d.boostAt = list(); d.oilAt = list(); d.jumpAt = list(); d.bridgeAt = list(); } else { d.boostAt = []; d.oilAt = []; d.jumpAt = []; d.bridgeAt = []; }
+  if (ver >= 3) { d.boostAt = ver >= 4 ? list(v => v & 7) : list(); d.oilAt = list(); d.jumpAt = list(); d.bridgeAt = list(); } else { d.boostAt = []; d.oilAt = []; d.jumpAt = []; d.bridgeAt = []; }
   return d;
 }
 async function packCode(d) {
@@ -2306,7 +2307,8 @@ function drawTrack(x, d, opt) {
   const icon = (list, f) => (list || []).forEach(p => { const w = RR.toWorld(p); f(w[0], w[1], p[2]); });
   icon(d.treeAt, (px, py) => { x.fillStyle = d.theme === 'desert' ? '#4d8a3a' : d.theme === 'autumn' ? '#d0621e' : d.theme === 'snow' ? '#2c6a40' : '#2f8d3a'; x.beginPath(); x.arc(px, py, 26, 0, 7); x.fill(); x.strokeStyle = 'rgba(0,0,0,0.4)'; x.lineWidth = 3; x.stroke(); });
   icon(d.umbAt, (px, py, t) => { for (let k = 0; k < 8; k++) { x.fillStyle = k % 2 ? '#fff' : (t === 0 ? '#e83a24' : '#2a6ee0'); x.beginPath(); x.moveTo(px, py); x.arc(px, py, 22, k * 0.785, (k + 1) * 0.785); x.fill(); } });
-  icon(d.boostAt, (px, py) => { x.fillStyle = '#222'; x.fillRect(px - 14, px * 0 + py - 16, 28, 32); x.strokeStyle = '#ffb020'; x.lineWidth = 4; for (let k = 0; k < 2; k++) { x.beginPath(); x.moveTo(px - 9, py + 6 - k * 10); x.lineTo(px, py - 2 - k * 10); x.lineTo(px + 9, py + 6 - k * 10); x.stroke(); } });
+  const roadDir = (px, py) => { const C = sh && sh.cham; if (!C || C.length < 2) return 0; let bd = 1e18, h = 0; for (let i = 0; i < C.length; i++) { const a = C[i], b = C[(i + 1) % C.length], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / L2)), ex = a[0] + dx * t - px, ey = a[1] + dy * t - py, dd = ex * ex + ey * ey; if (dd < bd) { bd = dd; h = Math.atan2(dx, -dy); } } return h; };
+  icon(d.boostAt, (px, py, r) => { x.save(); x.translate(px, py); x.rotate(roadDir(px, py) + (r | 0) * Math.PI / 4); x.fillStyle = '#222'; x.fillRect(-14, -16, 28, 32); x.strokeStyle = (r | 0) ? '#40e0ff' : '#ffb020'; x.lineWidth = 4; for (let k = 0; k < 2; k++) { x.beginPath(); x.moveTo(-9, 6 - k * 10); x.lineTo(0, -2 - k * 10); x.lineTo(9, 6 - k * 10); x.stroke(); } x.restore(); });
   icon(d.oilAt, (px, py) => { x.fillStyle = '#1a1622'; x.beginPath(); x.ellipse(px, py, 16, 12, 0.4, 0, 7); x.fill(); x.strokeStyle = '#b07aff'; x.lineWidth = 2; x.beginPath(); x.ellipse(px - 2, py - 2, 8, 5, 0.4, 0, 7); x.stroke(); });
   icon(d.jumpAt, (px, py) => { x.fillStyle = '#c89858'; x.fillRect(px - 18, py - 12, 36, 24); x.fillStyle = '#ffcf20'; x.fillRect(px - 18, py - 12, 36, 5); x.fillStyle = '#fff'; x.beginPath(); x.moveTo(px, py - 4); x.lineTo(px + 7, py + 6); x.lineTo(px - 7, py + 6); x.fill(); });
   icon(d.bridgeAt, (px, py) => { x.fillStyle = 'rgba(140,130,115,0.9)'; x.fillRect(px - 60, py - 14, 120, 28); x.fillStyle = '#ddd5c0'; for (let k = -60; k < 60; k += 10) { x.fillRect(px + k, py - 15, 3, 4); x.fillRect(px + k, py + 11, 3, 4); } });
@@ -2457,7 +2459,7 @@ const ED = {};
 const TOOLS = [['road', 'Road', 'Click to add a corner (on a road to split it). Drag corners to move them. Right-click a corner to remove it.'], ['cut', 'Shortcut', 'Click on the road to start a dirt shortcut, click to bend it, click on the road again to finish. Esc cancels.'],
   ['tree', 'Tree', 'Click to plant a tree (the kind matches the terrain). Trees are drawn over the cars but are not solid.'], ['umb', 'Umbrella', 'Click to place a red/white umbrella. Click again with a blue one selected for blue.'],
   ['cone', 'Cone', 'Click to place a cone (cars knock them about).'], ['pick', 'Pickup', 'Choose a pickup type below, then click on the road to place it. "?" = random each time.'],
-  ['lamp', 'Light', 'Click to place a street light (lights up night races).'], ['boost', 'Boost pad', 'Click on the road: cars that drive over it get a burst of speed.'], ['oil', 'Oil slick', 'Click on the road: cars that hit it lose grip and slide for a moment.'], ['jump', 'Jump', 'Click on a straight: fast cars fly over it (place it where there is room to land).'], ['bridge', 'Bridge', 'Click on the road: a bridge crosses over the track (cars drive under it).'], ['copy', 'Copy', 'Click two corners of a box around items to copy them, then click to paste copies.'], ['erase', 'Eraser', 'Click on anything to remove it.'], ['pan', 'Move view', 'Drag to move around. Mouse wheel (or + / -) zooms.']];
+  ['lamp', 'Light', 'Click to place a street light (lights up night races).'], ['boost', 'Boost pad', 'Click on the road to place a boost pad. Click a pad you placed to turn it (8 directions; blue arrows = turned). Cars get pushed the way the arrows point.'], ['oil', 'Oil slick', 'Click on the road: cars that hit it lose grip and slide for a moment.'], ['jump', 'Jump', 'Click on a straight: fast cars fly over it (place it where there is room to land).'], ['bridge', 'Bridge', 'Click on the road: a bridge crosses over the track (cars drive under it).'], ['copy', 'Copy', 'Click two corners of a box around items to copy them, then click to paste copies.'], ['erase', 'Eraser', 'Click on anything to remove it.'], ['pan', 'Move view', 'Drag to move around. Mouse wheel (or + / -) zooms.']];
 function edit(def) {
   css(); closeAll();
   const d = JSON.parse(JSON.stringify(def));
@@ -2568,6 +2570,7 @@ function edit(def) {
       else if (T === 'cone') D.coneAt.push(q);
       else if (T === 'pick') D.pickAt.push([q[0], q[1], ED.pk === 'R' ? '' : ED.pk]);
       else if (T === 'lamp') D.lampAt.push(q);
+      else if (T === 'boost' && near(D.boostAt, g, 0.25) >= 0) { const p = D.boostAt[near(D.boostAt, g, 0.25)]; p[0] = +p[0]; p[2] = ((p[2] | 0) + 1) % 8; flash('Boost pad turned: ' + ['with the road', '45° right', 'right (sideways)', '135° right', 'backwards', '135° left', 'left (sideways)', '45° left'][p[2]] + '. Click again to keep turning.'); }
       else if (T === 'boost' || T === 'oil' || T === 'jump' || T === 'bridge') { if (!onRoad(q)) { ED.undo.pop(); flash('Put that on the road.', true); return; } D[T + 'At'].push(q); }
       if (T === 'tree' || T === 'umb' || T === 'lamp') { const w = RR.toWorld(q), sh = RR.trackShape(D); if (sh && onRoad(q)) flash('Tip: trees, umbrellas and lights look best off the road (they are not solid).'); }
     }
@@ -3041,10 +3044,10 @@ RR.SMOKES = {
   white: { name: 'White', rgb: '236,236,232' }, red: { name: 'Red', rgb: '255,70,60' }, blue: { name: 'Blue', rgb: '70,140,255' },
   gold: { name: 'Gold', rgb: '255,205,60' }, purple: { name: 'Purple', rgb: '170,90,255' }, green: { name: 'Green', rgb: '80,230,110' },
   pink: { name: 'Pink', rgb: '255,120,200' }, black: { name: 'Black', rgb: '46,44,50' }, ocean: { name: 'Ocean', rgb: '40,210,220' },
-  rainbow: { name: 'Rainbow', rainbow: true },
+  orange: { name: 'Orange', rgb: '255,140,40' },
 };
 RR.SMOKE_ORDER = Object.keys(RR.SMOKES);
-RR.TRAILS = { none: { name: 'No trail' }, neon: { name: 'Neon' }, fire: { name: 'Fire' }, sparkle: { name: 'Sparkle' }, pixel: { name: 'Pixel' }, ghost: { name: 'Ghost' }, rainbow: { name: 'Rainbow' } };
+RR.TRAILS = { none: { name: 'No trail' }, neon: { name: 'Neon' }, fire: { name: 'Fire' }, sparkle: { name: 'Sparkle' }, pixel: { name: 'Pixel' }, ghost: { name: 'Ghost' }, gold: { name: 'Gold' } };
 RR.TRAIL_ORDER = Object.keys(RR.TRAILS);
 RR.FX_CHALLENGES = [
   { id: 'fx_jump', name: 'High Flyer', desc: 'Fly off 10 jumps', goal: 10, stat: s => s.jumps, smoke: 'red' },
@@ -3057,8 +3060,8 @@ RR.FX_CHALLENGES = [
   { id: 'fx_club', name: 'Crew Up', desc: 'Start or join a Club', goal: 1, stat: s => s.club, smoke: 'green' },
   { id: 'fx_likes', name: 'Crowd Pleaser', desc: 'Like 3 online tracks', goal: 3, stat: s => s.likes, smoke: 'pink' },
   { id: 'fx_oil', name: 'Slick Survivor', desc: 'Win 3 races after sliding on oil', goal: 3, stat: s => s.oilWins, smoke: 'black' },
-  { id: 'fx_all', name: 'Completionist', desc: 'Finish all 12 decal challenges', goal: 12, stat: s => s.decalsDone, smoke: 'rainbow', trail: 'rainbow' },
-  { id: 'sx_code', name: 'Old School', desc: 'Enter the classic cheat code on the menu', hint: 'Up, up, down, down... (phone: tap the logo 7 times)', goal: 1, stat: s => s.konami, trail: 'pixel', hidden: true },
+  { id: 'fx_all', name: 'Completionist', desc: 'Finish all 12 decal challenges', goal: 12, stat: s => s.decalsDone, smoke: 'orange', trail: 'gold' },
+  { id: 'sx_code', name: 'Old School', desc: 'Enter the classic cheat code on the menu', hint: RR.MOBILE ? 'The logo likes being tapped... a lot.' : 'Up, up, down, down...', goal: 1, stat: s => s.konami, trail: 'pixel', hidden: true },
   { id: 'sx_qwak', name: 'Quack Quack', desc: 'Finish a race named after the original game\'s creator', hint: 'Who made the 2012 original?', goal: 1, stat: s => s.qwak, smoke: 'ocean', hidden: true },
   { id: 'sx_clean', name: 'Clean Sweep', desc: 'Win a race of 3+ laps without touching a wall', hint: 'Win without a scratch...', goal: 1, stat: s => s.cleanWins, trail: 'ghost', hidden: true },
 ];
@@ -3222,8 +3225,8 @@ canvas.addEventListener('mousemove', e => { const [x, y] = toVirtual(e); const i
 function pointerDown(x, y) {
   A.init(); A.setMusic(musicModeFor(state.screen));
   if (RR.MOBILE && state.screen === 'race' && !state.paused && !state.notice && !state.info) {
-    if (inBox(x, y, TOUCH.pause)) { if (state.race.phase !== 'finished') { state.paused = true; state.focus = 0; A.play('back'); } return; }
     if (inBox(x, y, TOUCH.song)) { A.stepSong(1); return; }
+    if (inBox(x, y, TOUCH.pause)) { if (state.race.phase !== 'finished') { state.paused = true; state.focus = 0; A.play('back'); } return; }   // phone: tap anywhere above the driving buttons to pause
   }
   if (state.screen === 'cutscene' && state.cut && !state.notice) { if (x > VW - 70 && y < 22) endCut(); else state.cut.press(); return; }
   if (state.photo && state.photo.hide && !state.notice) { state.photo.hide = false; return; }
@@ -3238,7 +3241,7 @@ function pointerDown(x, y) {
 canvas.addEventListener('mousedown', e => { const [x, y] = toVirtual(e); pointerDown(x, y); });
 // ---- phone: on-screen touch controls (left / right arrows bottom-left, accelerate bottom-right, as in RR) ----
 const TOUCH = RR.MOBILE ? { left: { x: 0, y: 368, w: 76, h: 112 }, right: { x: 80, y: 368, w: 80, h: 112 }, gas: { x: 168, y: 362, w: 102, h: 118 },
-  pause: { x: 4, y: 40, w: 26, h: 20 }, song: { x: 34, y: 40, w: 26, h: 20 } } : { left: { x: 6, y: 184, w: 62, h: 80 }, right: { x: 72, y: 184, w: 62, h: 80 }, gas: { x: 372, y: 170, w: 104, h: 96 },
+  pause: { x: 0, y: 0, w: 270, h: 300 }, song: { x: 4, y: 40, w: 26, h: 20 } } : { left: { x: 6, y: 184, w: 62, h: 80 }, right: { x: 72, y: 184, w: 62, h: 80 }, gas: { x: 372, y: 170, w: 104, h: 96 },
   pause: { x: 4, y: 40, w: 26, h: 20 }, song: { x: 34, y: 40, w: 26, h: 20 } };
 const touchHeld = { left: false, right: false, gas: false, rev: false };
 function inBox(x, y, b) { return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h; }
@@ -3514,7 +3517,7 @@ function drawBoards() {
 }
 // ---------------- News: what's new + an ideas / questions box (posts go to a public relay the developer reads) ----------------
 const IDEAS_TOPIC = 'retroracing-ideas-ss26';
-const NEWS = ['v1.8: jumps, boost pads, oil and bridges (Track Maker + Story + Daily), tyre smoke colours and trails', 'earned in Challenges, Photo Mode, save replays as video, Spectate + Rematch in Wi-Fi, Clubs, likes + Featured tracks.', 'Psst... there are 3 secrets to find. v1.7: medals, Daily Challenge, replays, shared tracks, friends + rivals.'];
+const NEWS = ['v1.8: jumps, boost pads, oil and bridges (Track Maker + Story + Daily), tyre smoke colours and trails', 'earned in Challenges, Photo Mode, save replays as video, Spectate + Rematch in Wi-Fi, Clubs, likes + Featured tracks.', 'v1.8.1: turn boost pads in the Track Maker (click a pad), phone: tap the screen to pause. 3 secrets to find!'];
 function newsButtons() { return [B(8, 246, 64, 20, 'Back', () => go('menu')), B(150, 236, 180, 28, 'Ask or suggest', () => openIdeaBox(), { big: 1, blue: 1 })]; }
 function loadIdeas(force) {
   if (state.ideas && !force && Date.now() - state.ideas.at < 60000) return; state.ideas = { at: Date.now(), list: (state.ideas && state.ideas.list) || [], status: 'Loading...' };
@@ -5372,7 +5375,8 @@ function drawTouchControls() {
   const gw = RR.MOBILE ? 32 : G.w * 0.36, gh = RR.MOBILE ? 30 : G.h * 0.30;
   tri([[gcx, gcy - gh], [gcx + gw, gcy + gh], [gcx - gw, gcy + gh]], fill(held.gas), rim, 4);
   if (RR.MOBILE && !rp) { const rx = 234, ry = 336; tri([[rx, ry + 11], [rx + 15, ry - 9], [rx - 15, ry - 9]], held.rev ? 'rgba(255,180,160,0.75)' : 'rgba(210,210,210,0.38)', rim, 3); ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = 'bold 6px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('REV', rx, ry - 13); }
-  for (const [b, label] of [[TOUCH.pause, 'II'], [TOUCH.song, '\u266A']]) {
+  if (RR.MOBILE && !rp && state.race && state.race.phase === 'countdown') { ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(ctx, VW / 2 - 80, 286, 160, 16, 6); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('Tap the screen up here to pause', VW / 2, 294.5); }
+  for (const [b, label] of (RR.MOBILE ? [[TOUCH.song, '\u266A']] : [[TOUCH.pause, 'II'], [TOUCH.song, '\u266A']])) {
     ctx.fillStyle = 'rgba(40,40,40,0.55)'; roundRect(ctx, b.x, b.y, b.w, b.h, 5); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 1);
   }
@@ -5538,10 +5542,9 @@ function trailUnlocked(k) { if (k === 'none') return true; const c = fxUnlockFor
 function mySmoke() { return save.smoke && RR.SMOKES[save.smoke] && smokeUnlocked(save.smoke) ? save.smoke : 'white'; }
 function myTrail() { return save.trail && RR.TRAILS[save.trail] && trailUnlocked(save.trail) ? save.trail : 'none'; }
 const smokeCache = {};
-const RAINBOW_RGB = ['255,70,70', '255,170,40', '255,240,60', '80,230,110', '60,150,255', '180,90,255'];
 function smokeSpr(k, r) {
   const S0 = RR.SMOKES[k]; if (!S0) return PUFF.smoke;
-  const rgb = S0.rainbow ? RAINBOW_RGB[((r || 0) * 6 / 6.29) | 0] : S0.rgb;
+  const rgb = S0.rgb;
   return smokeCache[rgb] || (smokeCache[rgb] = softSprite(rgb));
 }
 // ---- trails: a short history of where each car's tail has been ----
@@ -5561,9 +5564,10 @@ function drawTrailPts(kind, tp, sprite, sc) {
     ctx.globalCompositeOperation = 'lighter';
     seg((a, b, f) => { ctx.strokeStyle = `rgba(40,200,255,${0.28 * f})`; ctx.lineWidth = 8 * sc; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); });
     seg((a, b, f) => { ctx.strokeStyle = `rgba(200,250,255,${0.9 * f})`; ctx.lineWidth = 2.2 * sc; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); });
-  } else if (kind === 'rainbow') {
+  } else if (kind === 'gold') {
     ctx.globalCompositeOperation = 'lighter';
-    seg((a, b, f, i) => { ctx.strokeStyle = `hsla(${(i * 14 + t * 240) % 360},100%,60%,${0.75 * f})`; ctx.lineWidth = 5 * sc; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); });
+    seg((a, b, f) => { ctx.strokeStyle = `rgba(255,170,30,${0.3 * f})`; ctx.lineWidth = 8 * sc; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); });
+    seg((a, b, f) => { ctx.strokeStyle = `rgba(255,240,170,${0.9 * f})`; ctx.lineWidth = 2.2 * sc; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); });
   } else if (kind === 'fire') {
     ctx.globalCompositeOperation = 'lighter';
     for (const p of tp) { const f = Math.max(0, 1 - p.t / L), r = (1.5 + 4.5 * f) * sc * (0.7 + p.r * 0.6); ctx.fillStyle = `rgba(255,${(60 + 150 * f) | 0},${(20 * f) | 0},${0.45 * f})`; ctx.beginPath(); ctx.arc(p.x + (p.r - 0.5) * 4 * sc, p.y + (p.r - 0.5) * 4 * sc, r, 0, 7); ctx.fill(); }
@@ -5623,7 +5627,7 @@ function drawStyle() {
   ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0);
   for (const b of buttons()) { const o = b.style; if (!o) continue; const ok = o.kind === 'smoke' ? smokeUnlocked(o.k) : trailUnlocked(o.k);
     if (!ok) { ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(b.x, b.y, b.w, b.h); drawLock(b.x + b.w / 2, b.y + b.h / 2); continue; }
-    if (o.kind === 'smoke') { const S0 = RR.SMOKES[o.k]; if (S0.rainbow) { const g = ctx.createLinearGradient(b.x + 3, 0, b.x + 11, 0); RAINBOW_RGB.forEach((c, i) => g.addColorStop(i / 5, 'rgb(' + c + ')')); ctx.fillStyle = g; } else ctx.fillStyle = 'rgb(' + S0.rgb + ')'; ctx.beginPath(); ctx.arc(b.x + 7, b.y + b.h / 2, 3.2, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 0.6; ctx.stroke(); } }
+    if (o.kind === 'smoke') { const S0 = RR.SMOKES[o.k]; ctx.fillStyle = 'rgb(' + S0.rgb + ')'; ctx.beginPath(); ctx.arc(b.x + 7, b.y + b.h / 2, 3.2, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 0.6; ctx.stroke(); } }
   ctx.restore();
 }
 function drawLock(x, y) {
@@ -5666,7 +5670,7 @@ function secretKey(code) {
   return false;
 }
 function secretTap(x, y) {
-  if (state.screen !== 'menu') return false;
+  if (!RR.MOBILE || state.screen !== 'menu') return false;   // logo taps are the phone-only way in; PC uses the key code
   const lx = VW / 2, ly = RR.MOBILE ? 120 : 56, now = performance.now();
   if (Math.abs(x - lx) > 90 || Math.abs(y - ly) > 30) return false;
   SECRET.taps = SECRET.taps.filter(t => now - t < 3000); SECRET.taps.push(now);
