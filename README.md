@@ -1,3 +1,3 @@
-# retro-racing
-Fan recreation of Retro Racing (Mr Qwak, 2012) - phoe version
-Current version: 1.8.1
+# TopDown Racer
+A top-down racing game by SecretSea. Play it at https://mysterymaxwell05.github.io/retro-racing/
+Current version: 2.0.1
