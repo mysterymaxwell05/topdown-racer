@@ -32,7 +32,7 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
-RR.VERSION = '2.0.1';
+RR.VERSION = '2.0.2';
 RR.AI_DRIFT = { grip: 1, turn: 1, brake: 1, bendFrom: 0.2, bendSpan: 0.35, minSpeed: 100, edge: 0.92 };   // bots slide only in real corners, ease off near the road edge   // bots: lower grip / sharper turn-in = more sliding in corners
 RR.RUBBER = { close: 160, ramp: 200, boost: 0.035, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
 
@@ -3062,7 +3062,7 @@ RR.FX_CHALLENGES = [
   { id: 'fx_likes', name: 'Crowd Pleaser', desc: 'Like 3 online tracks', goal: 3, stat: s => s.likes, smoke: 'pink' },
   { id: 'fx_oil', name: 'Slick Survivor', desc: 'Win 3 races after sliding on oil', goal: 3, stat: s => s.oilWins, smoke: 'black' },
   { id: 'fx_all', name: 'Completionist', desc: 'Finish all 12 decal challenges', goal: 12, stat: s => s.decalsDone, smoke: 'orange', trail: 'gold' },
-  { id: 'sx_code', name: 'Old School', desc: 'Enter the classic cheat code on the menu', hint: RR.MOBILE ? 'The logo likes being tapped... a lot.' : 'Up, up, down, down...', goal: 1, stat: s => s.konami, trail: 'pixel', hidden: true },
+  { id: 'sx_code', name: 'Old School', desc: RR.MOBILE ? 'Tap the TopDown Racer logo on the menu 7 times quickly' : 'Enter the classic cheat code on the menu', hint: RR.MOBILE ? 'The logo likes being tapped... a lot.' : 'Up, up, down, down...', goal: 1, stat: s => s.konami, trail: 'pixel', hidden: true },
   { id: 'sx_comeback', name: 'Comeback Kid', desc: 'Win a race after being in last place', hint: 'It\'s not over until it\'s over...', goal: 1, stat: s => s.comeback, smoke: 'ocean', hidden: true },
   { id: 'sx_clean', name: 'Clean Sweep', desc: 'Win a race of 3+ laps without touching a wall', hint: 'Win without a scratch...', goal: 1, stat: s => s.cleanWins, trail: 'ghost', hidden: true },
 ];
@@ -3106,7 +3106,7 @@ if (save.musicVol == null) save.musicVol = save.music === false ? 0 : 8;
 function applyVolumes() { A.sfxVol = save.sfxVol / 10; A.sfx = save.sfxVol > 0; A.musicVol = save.musicVol / 10 * 1.0; A.music = save.musicVol > 0; A.apply(); A.applyMusicVol(); }
 applyVolumes(); A.voice = save.voice || 'male';
 const MAIN_SCREENS = ['title', 'menu', 'options', 'camp', 'cutscene', 'drift', 'boards', 'challenges', 'news', 'daily'];
-const musicModeFor = (sc) => MAIN_SCREENS.includes(sc) ? 'main' : 'game';
+const musicModeFor = (sc) => sc === 'title' || sc === 'intro' ? null : MAIN_SCREENS.includes(sc) ? 'main' : 'game';   // no music under the intro video
 A.onSong = (i, name) => { state.songToast = { text: '\u266A ' + (i + 1) + ': ' + name, t: 3 }; };
 
 // ---------------- display ----------------
@@ -5606,15 +5606,15 @@ let introVid = null;
 function startIntro() {
   if (state.screen !== 'title') return;
   A.play('menu');
-  if (!RR.ART || !RR.ART.intro || save.noIntro) { go('menu'); return; }
-  state.screen = 'intro';
+  if (!RR.ART || !RR.ART.intro || save.noIntro) { go('menu'); A.setMusic('main'); return; }
+  state.screen = 'intro'; A.setMusic(null);
   const v = introVid = document.createElement('video');
   v.src = RR.ART.intro; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
   v.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:45;cursor:pointer';
   const skip = document.createElement('div'); skip.textContent = 'Skip \u25B6';
   skip.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:46;color:#fff;font:bold 16px "Trebuchet MS",sans-serif;background:rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.6);border-radius:10px;padding:6px 12px;cursor:pointer';
   let done = false;
-  const end = () => { if (done) return; done = true; try { v.pause(); } catch (e) {} v.remove(); skip.remove(); window.removeEventListener('keydown', key, true); introVid = null; go('menu'); };
+  const end = () => { if (done) return; done = true; try { v.pause(); } catch (e) {} v.remove(); skip.remove(); window.removeEventListener('keydown', key, true); introVid = null; go('menu'); A.setMusic('main'); };
   const key = e => { e.preventDefault(); e.stopPropagation(); end(); };
   v.onended = end; v.onerror = end; v.onclick = end; skip.onclick = end; window.addEventListener('keydown', key, true);
   document.body.appendChild(v); document.body.appendChild(skip);
@@ -5771,8 +5771,8 @@ function secretKey(code) {
 }
 function secretTap(x, y) {
   if (!RR.MOBILE || state.screen !== 'menu') return false;   // logo taps are the phone-only way in; PC uses the key code
-  const lx = VW / 2, ly = RR.MOBILE ? 120 : 56, now = performance.now();
-  if (Math.abs(x - lx) > 90 || Math.abs(y - ly) > 30) return false;
+  const lx = VW / 2, ly = 92, now = performance.now();   // the logo in the phone menu picture
+  if (Math.abs(x - lx) > 118 || Math.abs(y - ly) > 42) return false;
   SECRET.taps = SECRET.taps.filter(t => now - t < 3000); SECRET.taps.push(now);
   if (SECRET.taps.length >= 7) { SECRET.taps = []; secretFound(); }
   return true;
