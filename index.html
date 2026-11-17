@@ -32,7 +32,7 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
-RR.VERSION = '2.1.0';
+RR.VERSION = '2.1.1';
 RR.AI_DRIFT = { grip: 1, turn: 1, brake: 1, bendFrom: 0.2, bendSpan: 0.35, minSpeed: 100, edge: 0.92 };   // bots slide only in real corners, ease off near the road edge   // bots: lower grip / sharper turn-in = more sliding in corners
 RR.RUBBER = { close: 160, ramp: 200, boost: 0.035, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
 
@@ -1073,8 +1073,9 @@ function renderTrack(T) {
   for (const c of corners) {
     if (!c.sharp && rnd() < 0.5) continue;
     const ext = c.sharp ? W * 0.45 : W * 0.3;
-    const path = [[c.a[0] - c.di[0] * ext, c.a[1] - c.di[1] * ext], c.a, c.b, [c.b[0] + c.dO[0] * ext, c.b[1] + c.dO[1] * ext]];
-    const stroke = (x, w, col, dash) => { x.save(); x.lineJoin = 'miter'; x.lineWidth = w; x.strokeStyle = col; x.setLineDash(dash || []); x.beginPath(); x.moveTo(path[0][0], path[0][1]); for (let i = 1; i < 4; i++) x.lineTo(path[i][0], path[i][1]); x.stroke(); x.restore(); };
+    const mid = []; if (T.def.round) roundCorner(mid, c.P, c.di, c.dO, Math.hypot(c.a[0] - c.P[0], c.a[1] - c.P[1])); else mid.push(c.a, c.b);   // kerb follows the curve on rounded tracks
+    const path = [[c.a[0] - c.di[0] * ext, c.a[1] - c.di[1] * ext]].concat(mid, [[c.b[0] + c.dO[0] * ext, c.b[1] + c.dO[1] * ext]]);
+    const stroke = (x, w, col, dash) => { x.save(); x.lineJoin = T.def.round ? 'round' : 'miter'; x.lineWidth = w; x.strokeStyle = col; x.setLineDash(dash || []); x.beginPath(); x.moveTo(path[0][0], path[0][1]); for (let i = 1; i < path.length; i++) x.lineTo(path[i][0], path[i][1]); x.stroke(); x.restore(); };
     v.save(); v.shadowColor = 'rgba(0,0,0,0.35)'; v.shadowBlur = 2 * hd; v.shadowOffsetX = 0.6 * hd; v.shadowOffsetY = 1 * hd; stroke(v, W + 13, '#f2f2f0'); v.restore();
     stroke(v, W + 12, '#d61f1f', [7, 7]);
     stroke(v, W + 9, 'rgba(255,255,255,0.18)');   // top highlight on the raised kerb
@@ -1082,12 +1083,12 @@ function renderTrack(T) {
   }
   v.save(); v.lineJoin = 'miter'; v.miterLimit = 3; v.lineWidth = W; v.strokeStyle = asph; v.stroke(road); v.restore();
   // rubbered-in racing line, repair patches, darker edges
-  v.save(); v.globalAlpha = 0.22; v.lineJoin = 'round'; v.lineCap = 'round'; v.strokeStyle = '#2c2d30'; v.lineWidth = W * 0.3; v.filter = 'blur(' + (6 * hd) + 'px)';
+  v.save(); v.globalAlpha = 0.16; v.lineJoin = 'round'; v.lineCap = 'round'; v.strokeStyle = '#000'; v.lineWidth = Math.min(W * 0.3, 34); v.filter = 'blur(' + (5 * hd) + 'px)';   // always darker than the asphalt (it used to glow light grey at night)
   v.beginPath(); for (let i = 0; i <= T.N; i++) v.lineTo(T.RX[i % T.N], T.RY[i % T.N]); v.stroke(); v.restore();
   for (let i = 0; i < 6 + T.index; i++) {
     const s = (rnd() * T.N) | 0, h = T.H[s], off = (rnd() - 0.5) * (W - 30);
     v.save(); v.translate(T.X[s] + Math.cos(h) * off, T.Y[s] + Math.sin(h) * off); v.rotate(h);
-    v.fillStyle = 'rgba(60,62,66,0.35)'; v.fillRect(-8 - rnd() * 8, -6 - rnd() * 10, 14 + rnd() * 14, 10 + rnd() * 16); v.restore();
+    v.fillStyle = 'rgba(0,0,0,0.13)'; v.fillRect(-8 - rnd() * 8, -6 - rnd() * 10, 14 + rnd() * 14, 10 + rnd() * 16); v.restore();
   }
   for (const side of [-1, 1]) {   // soft darkening along both asphalt edges
     v.save(); v.strokeStyle = 'rgba(0,0,0,0.14)'; v.lineWidth = 6; v.lineJoin = 'round'; v.beginPath();
@@ -4925,7 +4926,7 @@ const fxBuf = RR.mk(8, 8), fxBufX = fxBuf.getContext('2d'), fxGrade = { c: null,
 function fxPost(race, cx, cy, ww, wh, vx, vy, vw, vh) {
   ctx.save(); ctx.setTransform(S, 0, 0, S, vx * S, vy * S);
   const hd = fxHD();
-  if (hd) {
+  if (hd && race.T.time !== 'night') {   // tilt-shift blur (skipped at night: the blurred copy isn't lit, so it showed up as a light haze)
     const bw = Math.max(8, Math.round(ww / 5)), bh = Math.max(8, Math.round(wh / 5));
     if (fxBuf.width !== bw || fxBuf.height !== bh) { fxBuf.width = bw; fxBuf.height = bh; }
     fxBufX.globalCompositeOperation = 'source-over'; fxBufX.setTransform(bw / ww, 0, 0, bh / wh, -cx * bw / ww, -cy * bh / wh);
