@@ -32,23 +32,23 @@ RR.DRIFT = RR.HANDLE;      // old name (kept for the tuning tools)
 RR.COUNT_LEAD = 0.5;       // quiet grid time before the buzzer
 RR.COUNT_STEP = 0.5;       // buzzer beeps every 0.5 s (measured from buzz_full: 0.04/0.55/1.04/1.54 s)       // fixed simulation step (render-rate independent)
 RR.LAPS = 3;               // [observed] HUD "1/3"
-RR.VERSION = '2.0.2';
+RR.VERSION = '2.1.0';
 RR.AI_DRIFT = { grip: 1, turn: 1, brake: 1, bendFrom: 0.2, bendSpan: 0.35, minSpeed: 100, edge: 0.92 };   // bots slide only in real corners, ease off near the road edge   // bots: lower grip / sharper turn-in = more sliding in corners
 RR.RUBBER = { close: 160, ramp: 200, boost: 0.035, rival: 0.02 };   // world units behind the bot that count as 'close'; max extra pace
 
 // ---- Drift Trials: solo drift levels (no story). Score comes from sliding; chain drifts for a multiplier. ----
 RR.DRIFT_SCORE = { angle: 0.26, speed: 70, rate: 0.5, step: 1.5, maxMult: 5, grace: 0.5, crash: 45, zoneBend: 0.45, zoneMult: 2, bots: 5, botDrifter: 1.7, placeBonus: [1.5, 1.3, 1.15] };
-RR.DRIFT_LEVELS = [   // wide, flowing tracks; corners become marked DRIFT ZONES (x2 points). You race 5 bots while you score.
-  { name: 'Petal Warm-Up', theme: 'sakura', time: 'day', w: 150, laps: 2, diff: 'easy', pts: [[3, 12], [3, 5], [6, 2], [13, 2], [16, 5], [19, 2], [24, 2], [27, 5], [27, 12], [24, 15], [17, 15], [14, 12], [11, 15], [6, 15]] },
-  { name: 'Meadow Esses', theme: 'meadow', time: 'day', w: 145, laps: 2, diff: 'easy', pts: [[3, 14], [3, 4], [5, 2], [9, 2], [11, 4], [11, 8], [13, 10], [17, 10], [19, 8], [19, 4], [21, 2], [25, 2], [27, 4], [27, 14], [25, 16], [5, 16]] },
-  { name: 'Snow Hairpins', theme: 'snow', time: 'sunset', w: 140, laps: 2, diff: 'easy', pts: [[3, 15], [3, 3], [8, 3], [10, 5], [10, 10], [12, 12], [14, 10], [14, 5], [16, 3], [22, 3], [24, 5], [24, 10], [26, 12], [28, 12], [28, 15]] },
-  { name: 'Desert Sweepers', theme: 'desert', time: 'day', w: 150, laps: 2, diff: 'normal', pts: [[3, 9], [5, 4], [9, 2], [15, 3], [19, 6], [23, 4], [27, 6], [28, 11], [25, 15], [19, 16], [15, 13], [10, 16], [5, 14]] },
-  { name: 'Gear Town Chicanes', theme: 'city', time: 'day', w: 140, laps: 2, diff: 'normal', pts: [[3, 14], [3, 3], [8, 3], [10, 6], [13, 6], [15, 3], [22, 3], [24, 6], [27, 6], [27, 14], [22, 14], [20, 11], [17, 11], [15, 14]] },
-  { name: 'Neon Snake', theme: 'neon', time: 'night', w: 140, laps: 2, diff: 'normal', pts: [[3, 16], [3, 3], [7, 3], [9, 6], [12, 3], [16, 3], [18, 6], [21, 3], [25, 3], [27, 6], [27, 16], [23, 16], [21, 12], [18, 16], [14, 16], [12, 12], [9, 16]] },
-  { name: 'Misty Switchbacks', theme: 'mist', time: 'sunset', w: 135, laps: 2, diff: 'normal', pts: [[3, 16], [3, 4], [5, 2], [23, 2], [25, 4], [23, 6], [9, 6], [7, 8], [9, 10], [23, 10], [25, 12], [23, 14], [5, 14]] },
-  { name: 'Storm Spiral', theme: 'storm', time: 'day', w: 140, laps: 2, diff: 'hard', pts: [[3, 15], [3, 4], [5, 2], [23, 2], [25, 4], [25, 13], [23, 15], [19, 15], [17, 12], [11, 12], [9, 15]] },
-  { name: 'Coast Carousel', theme: 'coast', time: 'sunset', w: 145, laps: 2, diff: 'hard', pts: [[4, 12], [3, 6], [6, 3], [11, 4], [14, 7], [17, 4], [22, 3], [25, 6], [24, 12], [20, 15], [14, 13], [8, 15]] },
-  { name: 'Inferno Run', theme: 'volcano', time: 'sunset', w: 135, laps: 2, diff: 'hard', pts: [[3, 15], [3, 3], [9, 3], [12, 7], [9, 10], [14, 12], [18, 8], [15, 4], [21, 2], [26, 5], [24, 10], [26, 15]] },
+RR.DRIFT_LEVELS = [   // solo time attack: wide roads, smooth curved corners made for sliding; you race your own best (ghost) and the leaderboard
+  { name: 'Petal Warm-Up', theme: 'sakura', time: 'day', w: 160, laps: 3, round: true, pts: [[3, 12], [3, 5], [6, 2], [13, 2], [16, 5], [19, 2], [24, 2], [27, 5], [27, 12], [24, 15], [17, 15], [14, 12], [11, 15], [6, 15]] },
+  { name: 'Meadow Esses', theme: 'meadow', time: 'day', w: 160, laps: 3, round: true, pts: [[3, 14], [3, 4], [5, 2], [9, 2], [11, 4], [11, 8], [13, 10], [17, 10], [19, 8], [19, 4], [21, 2], [25, 2], [27, 4], [27, 14], [25, 16], [5, 16]] },
+  { name: 'Snow Hairpins', theme: 'snow', time: 'sunset', w: 160, laps: 3, round: true, pts: [[3, 15], [3, 3], [8, 3], [10, 5], [10, 10], [12, 12], [14, 10], [14, 5], [16, 3], [22, 3], [24, 5], [24, 10], [26, 12], [28, 12], [28, 15]] },
+  { name: 'Desert Sweepers', theme: 'desert', time: 'day', w: 160, laps: 3, round: true, pts: [[3, 9], [5, 4], [9, 2], [15, 3], [19, 6], [23, 4], [27, 6], [28, 11], [25, 15], [19, 16], [15, 13], [10, 16], [5, 14]] },
+  { name: 'Gear Town Chicanes', theme: 'city', time: 'day', w: 160, laps: 3, round: true, pts: [[3, 14], [3, 3], [8, 3], [10, 6], [13, 6], [15, 3], [22, 3], [24, 6], [27, 6], [27, 14], [22, 14], [20, 11], [17, 11], [15, 14]] },
+  { name: 'Neon Snake', theme: 'neon', time: 'night', w: 160, laps: 3, round: true, pts: [[3, 16], [3, 3], [7, 3], [9, 6], [12, 3], [16, 3], [18, 6], [21, 3], [25, 3], [27, 6], [27, 16], [23, 16], [21, 12], [18, 16], [14, 16], [12, 12], [9, 16]] },
+  { name: 'Misty Switchbacks', theme: 'mist', time: 'sunset', w: 160, laps: 3, round: true, pts: [[3, 16], [3, 4], [5, 2], [23, 2], [25, 4], [23, 6], [9, 6], [7, 8], [9, 10], [23, 10], [25, 12], [23, 14], [5, 14]] },
+  { name: 'Storm Spiral', theme: 'storm', time: 'day', w: 160, laps: 3, round: true, pts: [[3, 15], [3, 4], [5, 2], [23, 2], [25, 4], [25, 13], [23, 15], [19, 15], [17, 12], [11, 12], [9, 15]] },
+  { name: 'Coast Carousel', theme: 'coast', time: 'sunset', w: 160, laps: 3, round: true, pts: [[4, 12], [3, 6], [6, 3], [11, 4], [14, 7], [17, 4], [22, 3], [25, 6], [24, 12], [20, 15], [14, 13], [8, 15]] },
+  { name: 'Inferno Run', theme: 'volcano', time: 'sunset', w: 160, laps: 3, round: true, pts: [[3, 15], [3, 3], [9, 3], [12, 7], [9, 10], [14, 12], [18, 8], [15, 4], [21, 2], [26, 5], [24, 10], [26, 15]] },
 ];
 RR.REVERSE = { top: 70, acc: 90, brake: 320, stop: 260, engageSpeed: 18, turn: 0.7 };   // reverse: ~28% of top speed, gentle
 RR.START_BOOST = { window: 0.45, boost: 0.3 };   // press gas within 0.45 s before GO (and hold) = a short, subtle burst of nitro
@@ -540,6 +540,10 @@ const U = 100, MARGIN = 3;
 function norm(x, y) { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; }
 
 RR.TRACK_UNIT = 100; RR.TRACK_MARGIN = 3;
+function roundCorner(out, P, di, dO, c) {   // smooth curved corner (drift tracks): a curve from the entry point to the exit point
+  const a = [P[0] - di[0] * c, P[1] - di[1] * c], b = [P[0] + dO[0] * c, P[1] + dO[1] * c], n = 12;
+  for (let k = 0; k <= n; k++) { const t = k / n, u = 1 - t; out.push([u * u * a[0] + 2 * u * t * P[0] + t * t * b[0], u * u * a[1] + 2 * u * t * P[1] + t * t * b[1]]); }
+}
 RR.trackShape = function (def) {   // quick outline for the track maker: chamfered road polygon + start line, world units
   const W = def.w, n = def.pts.length; if (n < 3) return null;
   const pts = def.pts.map(p => [(p[0] + MARGIN - 1) * U, (p[1] + MARGIN - 1) * U]), cham = [];
@@ -548,6 +552,7 @@ RR.trackShape = function (def) {   // quick outline for the track maker: chamfer
     const li = Math.hypot(P[0] - A[0], P[1] - A[1]), lo = Math.hypot(B[0] - P[0], B[1] - P[1]); if (li < 1 || lo < 1) continue;
     const di = norm(P[0] - A[0], P[1] - A[1]), dO = norm(B[0] - P[0], B[1] - P[1]), dot = di[0] * dO[0] + di[1] * dO[1];
     if (dot > 0.99) { cham.push(P); continue; }
+    if (def.round) { roundCorner(cham, P, di, dO, Math.min(dot < 0.2 ? W * 1.7 : W * 1.15, li * 0.48, lo * 0.48)); continue; }
     const c = Math.min(dot < 0.2 ? W * 1.35 : W * 0.85, li * 0.45, lo * 0.45);
     cham.push([P[0] - di[0] * c, P[1] - di[1] * c], [P[0] + dO[0] * c, P[1] + dO[1] * c]);
   }
@@ -570,9 +575,9 @@ RR.buildTrack = function (def, index) {
     const dot = di[0] * dO[0] + di[1] * dO[1];
     if (dot > 0.99) { cham.push(P); continue; }
     const sharp = dot < 0.2; // 90°+ turn
-    const c = Math.min(sharp ? W * 1.35 : W * 0.85, li * 0.45, lo * 0.45); // sweeping RR2-style corners
+    const c = def.round ? Math.min(sharp ? W * 1.7 : W * 1.15, li * 0.48, lo * 0.48) : Math.min(sharp ? W * 1.35 : W * 0.85, li * 0.45, lo * 0.45); // sweeping RR2-style corners
     const a = [P[0] - di[0] * c, P[1] - di[1] * c], b = [P[0] + dO[0] * c, P[1] + dO[1] * c];
-    cham.push(a, b);
+    if (def.round) roundCorner(cham, P, di, dO, c); else cham.push(a, b);
     const cross = di[0] * dO[1] - di[1] * dO[0];
     corners.push({ P, a, b, di, dO, turn: Math.sign(cross), sharp });
   }
@@ -3014,8 +3019,20 @@ RR.DECALS = {
   tiger: { name: 'Tiger Stripes', draw: x => { x.fillStyle = '#111'; for (let k = 0; k < 7; k++) { const y = 3 + k * 3.3; [[4, 1], [16, -1]].forEach(([sx, d]) => { x.beginPath(); x.moveTo(sx, y); x.lineTo(sx + d * 5, y + 0.9); x.lineTo(sx, y + 1.6); x.closePath(); x.fill(); }); } } },
 };
 RR.DECAL_ORDER = Object.keys(RR.DECALS);
+RR.DECALS.goldpaint = { name: 'Gold Paint', paint: true };   // the whole car turns shiny gold (reward for 1st place in all 18 races)
 RR.applyDecal = function (sprite, id) {
   const D = id && RR.DECALS[id]; if (!D) return sprite;
+  if (D.paint) {
+    const c = RR.mk(sprite.width, sprite.height), x = c.getContext('2d'), w = sprite.width, h = sprite.height;
+    x.drawImage(sprite, 0, 0);
+    const t = RR.mk(w, h), y = t.getContext('2d'); y.drawImage(sprite, 0, 0); y.globalCompositeOperation = 'color';
+    const g = y.createLinearGradient(0, 0, w, h); g.addColorStop(0, '#ffe680'); g.addColorStop(0.5, '#ffb800'); g.addColorStop(1, '#ffe9a0'); y.fillStyle = g; y.fillRect(0, 0, w, h);
+    y.globalCompositeOperation = 'destination-in'; y.drawImage(sprite, 0, 0);
+    x.globalAlpha = 0.9; x.drawImage(t, 0, 0); x.globalAlpha = 1;
+    x.globalCompositeOperation = 'source-atop'; const s = x.createLinearGradient(0, 0, w, 0); s.addColorStop(0.3, 'rgba(255,255,255,0)'); s.addColorStop(0.45, 'rgba(255,255,240,0.45)'); s.addColorStop(0.6, 'rgba(255,255,255,0)'); x.fillStyle = s; x.fillRect(0, 0, w, h);
+    for (const k in sprite) if (Object.prototype.hasOwnProperty.call(sprite, k)) c[k] = sprite[k];
+    return c;
+  }
   const c = RR.mk(sprite.width, sprite.height), x = c.getContext('2d');
   x.drawImage(sprite, 0, 0);
   x.save(); x.globalCompositeOperation = 'source-atop'; x.scale(sprite.width / 20, sprite.height / 26); x.globalAlpha = 0.92;
@@ -3029,8 +3046,8 @@ RR.CHALLENGES = [
   { id: 'win1', name: 'First Victory', desc: 'Win any race', goal: 1, stat: s => s.wins, decal: 'stripes' },
   { id: 'starts', name: 'Lightning Reflexes', desc: 'Get 10 GREAT STARTs', goal: 10, stat: s => s.starts, decal: 'bolt' },
   { id: 'boosts', name: 'Sideways King', desc: 'Earn 25 drift boosts', goal: 25, stat: s => s.boosts, decal: 'flame' },
-  { id: 'dstars', name: 'Petal Pusher', desc: 'Earn 10 stars in Drift Trials', goal: 10, stat: s => s.driftStars, decal: 'sakura' },
-  { id: 'dscore', name: 'Drift Legend', desc: 'Score 5,000 in one Drift Trial', goal: 5000, stat: s => s.driftBest, decal: 'wings' },
+  { id: 'dstars', name: 'Petal Pusher', desc: 'Set a time on all 10 Drift Trials', goal: 10, stat: s => s.driftDone, decal: 'sakura' },
+  { id: 'dscore', name: 'Drift Legend', desc: 'Beat your own best Drift Trial time 15 times', goal: 15, stat: s => s.driftPBs, decal: 'wings' },
   { id: 'kings', name: 'King Slayer', desc: 'Beat 3 Kings in Story Mode', goal: 3, stat: s => s.kings, decal: 'number' },
   { id: 'emperor', name: 'Dragon Tamer', desc: 'Beat the Emperor', goal: 1, stat: s => s.emperor, decal: 'dragon' },
   { id: 'ghosts', name: 'Ghostbuster', desc: 'Beat your ghost 3 times', goal: 3, stat: s => s.ghostWins, decal: 'ghost' },
@@ -3048,7 +3065,7 @@ RR.SMOKES = {
   orange: { name: 'Orange', rgb: '255,140,40' },
 };
 RR.SMOKE_ORDER = Object.keys(RR.SMOKES);
-RR.TRAILS = { none: { name: 'No trail' }, neon: { name: 'Neon' }, fire: { name: 'Fire' }, sparkle: { name: 'Sparkle' }, pixel: { name: 'Pixel' }, ghost: { name: 'Ghost' }, gold: { name: 'Gold' } };
+RR.TRAILS = { none: { name: 'No trail' }, neon: { name: 'Neon' }, fire: { name: 'Fire' }, sparkle: { name: 'Sparkle' }, pixel: { name: 'Pixel' }, ghost: { name: 'Ghost' }, gold: { name: 'Gold' }, lightning: { name: 'Lightning' } };
 RR.TRAIL_ORDER = Object.keys(RR.TRAILS);
 RR.FX_CHALLENGES = [
   { id: 'fx_jump', name: 'High Flyer', desc: 'Fly off 10 jumps', goal: 10, stat: s => s.jumps, smoke: 'red' },
@@ -3061,12 +3078,14 @@ RR.FX_CHALLENGES = [
   { id: 'fx_club', name: 'Crew Up', desc: 'Start or join a Club', goal: 1, stat: s => s.club, smoke: 'green' },
   { id: 'fx_likes', name: 'Crowd Pleaser', desc: 'Like 3 online tracks', goal: 3, stat: s => s.likes, smoke: 'pink' },
   { id: 'fx_oil', name: 'Slick Survivor', desc: 'Win 3 races after sliding on oil', goal: 3, stat: s => s.oilWins, smoke: 'black' },
-  { id: 'fx_all', name: 'Completionist', desc: 'Finish all 12 decal challenges', goal: 12, stat: s => s.decalsDone, smoke: 'orange', trail: 'gold' },
+  { id: 'fx_all', name: 'Completionist', desc: 'Do all 12 decal challenges', goal: 12, stat: s => s.decalsDone, smoke: 'orange', trail: 'gold' },
+  { id: 'fx_tour', name: 'Grand Tour', desc: 'Finish all 18 races in 1 Player', goal: 18, stat: s => s.racesFinished, trail: 'lightning', big: true },
+  { id: 'fx_champ', name: 'Champion of All', desc: 'Win all 18 races in 1 Player', goal: 18, stat: s => s.racesWon, decal: 'goldpaint', smoke: 'gold', big: true },
   { id: 'sx_code', name: 'Old School', desc: RR.MOBILE ? 'Tap the TopDown Racer logo on the menu 7 times quickly' : 'Enter the classic cheat code on the menu', hint: RR.MOBILE ? 'The logo likes being tapped... a lot.' : 'Up, up, down, down...', goal: 1, stat: s => s.konami, trail: 'pixel', hidden: true },
   { id: 'sx_comeback', name: 'Comeback Kid', desc: 'Win a race after being in last place', hint: 'It\'s not over until it\'s over...', goal: 1, stat: s => s.comeback, smoke: 'ocean', hidden: true },
   { id: 'sx_clean', name: 'Clean Sweep', desc: 'Win a race of 3+ laps without touching a wall', hint: 'Win without a scratch...', goal: 1, stat: s => s.cleanWins, trail: 'ghost', hidden: true },
 ];
-RR.fxRewardName = c => c.smoke && c.trail && RR.SMOKES[c.smoke].name === RR.TRAILS[c.trail].name ? RR.SMOKES[c.smoke].name + ' smoke + trail' : [c.smoke && RR.SMOKES[c.smoke].name + ' smoke', c.trail && RR.TRAILS[c.trail].name + ' trail'].filter(Boolean).join(' + ');
+RR.fxRewardName = c => c.decal ? RR.DECALS[c.decal].name + (c.smoke ? ' + ' + RR.SMOKES[c.smoke].name + ' smoke' : '') : c.smoke && c.trail && RR.SMOKES[c.smoke].name === RR.TRAILS[c.trail].name ? RR.SMOKES[c.smoke].name + ' smoke + trail' : [c.smoke && RR.SMOKES[c.smoke].name + ' smoke', c.trail && RR.TRAILS[c.trail].name + ' trail'].filter(Boolean).join(' + ');
 })();
 
 // Game shell: display, input, screens, HUD, save data, main loop, test hooks.
@@ -3402,10 +3421,9 @@ function statBump(k, n) { const s = stats0(); s[k] = (s[k] || 0) + (n || 1);
   persist(); }
 function allStats() {
   const s = stats0(), D = save.drift || {}, cs = (save.camp || { beaten: [] }).beaten || [];
-  let driftStars = 0, driftBest = 0; for (let k = 0; k < RR.DRIFT_LEVELS.length; k++) { if (D[k]) { driftStars += driftStars0(k, D[k]); driftBest = Math.max(driftBest, D[k]); } }
-  return Object.assign({}, s, { driftStars, driftBest, kings: cs.filter(k => k < 8).length, emperor: cs.includes(8) ? 1 : 0, threeStars: (save.stars || []).filter(v => v >= 3).length, customTracks: s.customIds.length });
+  const driftDone = Object.keys(save.driftTT || {}).length;
+  return Object.assign({}, s, { driftDone, driftPBs: s.driftPBs || 0, kings: cs.filter(k => k < 8).length, emperor: cs.includes(8) ? 1 : 0, threeStars: (save.stars || []).filter(v => v >= 3).length, customTracks: s.customIds.length });
 }
-function driftStars0(k, v) { return driftStars(k, v); }
 function chDone() { save.chDone = save.chDone || []; return save.chDone; }
 function checkChallenges() {
   const st = allStats(), done = chDone(); let any = false;
@@ -3413,10 +3431,10 @@ function checkChallenges() {
   if (any) persist();
   checkFxChallenges();
 }
-function decalUnlocked(id) { const c = RR.CHALLENGES.find(c => c.decal === id); return !!c && chDone().includes(c.id); }
+function decalUnlocked(id) { const c = RR.CHALLENGES.find(c => c.decal === id); if (c) return chDone().includes(c.id); const f = RR.FX_CHALLENGES.find(c => c.decal === id); return !!f && (save.fxDone || []).includes(f.id); }
 function myDecal() { return save.decal && decalUnlocked(save.decal) ? save.decal : null; }
 function cycleDecal(d) {
-  const opts = [null].concat(RR.DECAL_ORDER.filter(decalUnlocked));
+  const opts = [null].concat(RR.DECAL_ORDER.concat(['goldpaint']).filter(decalUnlocked));
   if (opts.length === 1) { notice('No decals yet!\nComplete Challenges (main menu) to unlock them.'); return; }
   save.decal = opts[(opts.indexOf(myDecal()) + d + opts.length) % opts.length]; persist();
 }
@@ -3482,7 +3500,7 @@ function lbSyncOnce() {   // first run with shared boards: send the bests alread
 setTimeout(() => { try { lbSyncOnce(); } catch (e) {} }, 4000);
 function lbList() {   // every board, in order
   const out = []; for (let i = 0; i < 18; i++) out.push({ key: 'r' + i, name: 'Race ' + (i + 1), cat: 'Races' });
-  RR.DRIFT_LEVELS.forEach((L, k) => out.push({ key: 'd' + k, name: L.name, cat: 'Drift Trials', high: true }));
+  RR.DRIFT_LEVELS.forEach((L, k) => out.push({ key: driftKey(k), name: L.name, cat: 'Drift Trials' }));
   for (let k = 0; k < 9; k++) out.push({ key: 's' + k, name: 'vs ' + (k < 8 ? RR.CAMP.rivals[k] : RR.CAMP.boss).alias, cat: 'Story' });
   try { RR.Editor.store.load().forEach(t => out.push({ key: 'c' + t.id, name: t.name, cat: 'My Tracks' })); } catch (e) {}
   return out;
@@ -3679,7 +3697,7 @@ function drawDailyBoard(key, x0, x1, y0, rows) {
   const B = LBG.boards[key], L = B && B.list; lbFetch(key);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   if (!L) { ctx.fillStyle = '#ffd0c0'; ctx.font = '9px "Trebuchet MS",sans-serif'; ctx.fillText(LBG.status || 'Loading today\'s leaderboard...', x0, y0); return; }
-  if (!L.length) { ctx.fillStyle = '#ffd0c0'; ctx.font = '9px "Trebuchet MS",sans-serif'; ctx.fillText('No times yet today - be the first!', x0, y0); return; }
+  if (!L.length) { ctx.fillStyle = '#ffd0c0'; ctx.font = '9px "Trebuchet MS",sans-serif'; ctx.fillText((key[0] === 'y' ? 'No times yet today' : 'No times yet') + ' - be the first!', x0, y0); return; }
   L.slice(0, rows).forEach((e, i) => { const y = y0 + i * 13, mine = e.i === save.devId;
     ctx.fillStyle = mine ? '#ffcf40' : '#fff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.textAlign = 'left'; ctx.fillText((i + 1) + '. ' + e.n + (mine ? ' (you)' : ''), x0, y);
     ctx.textAlign = 'right'; ctx.fillText(fmtTime(e.v), x1, y); });
@@ -3712,43 +3730,31 @@ function drawDailyResults(r) {
 }
 // ---------------- Drift Trials ----------------
 function driftSave() { save.drift = save.drift || {}; return save.drift; }
-function driftTargets(k) {   // star scores from the level's length (2 laps at drift pace)
-  const L = RR.DRIFT_LEVELS[k], sh = RR.trackShape(Object.assign({ cuts: [] }, L)); let len = 0;
-  const c = sh ? sh.cham : []; for (let i = 0; i < c.length; i++) { const p = c[i], q = c[(i + 1) % c.length]; len += Math.hypot(p[0] - q[0], p[1] - q[1]); }
-  const secs = len * (L.laps || 2) / 150, r50 = v => Math.round(v / 50) * 50;
-  return [r50(secs * 10), r50(secs * 26), r50(secs * 48)];
-}
-function driftStars(k, score) { const t = driftTargets(k); return score >= t[2] ? 3 : score >= t[1] ? 2 : score >= t[0] ? 1 : 0; }
-function driftUnlocked() { const D = driftSave(); let n = 0; while (n < RR.DRIFT_LEVELS.length - 1 && (D[n] || 0) > 0 && driftStars(n, D[n]) > 0) n++; return n; }
+function driftTT() { save.driftTT = save.driftTT || {}; return save.driftTT; }   // best time per Drift Trial
+const driftKey = k => 'r' + (40 + k);   // shared leaderboard per Drift Trial (fastest time wins)
+function driftDef(k) { const L = RR.DRIFT_LEVELS[k]; return { name: L.name, w: L.w, pts: L.pts, cuts: [], theme: L.theme, time: L.time, laps: L.laps || 3, round: true, bots: 0, trees: 60, umb: 2, seed: 300 + k * 11, pickAt: [] }; }
 function driftButtons() {
-  const out = RR.DRIFT_LEVELS.map((L, i) => B(30 + (i % 5) * 86, 52 + ((i / 5) | 0) * 86, 80, 78, '', () => {
-    if (i > driftUnlocked()) { notice('Get at least 1 star on ' + RR.DRIFT_LEVELS[i - 1].name + '\nto unlock this level.'); return; }
-    state.driftK = i; go('carselect'); }, { drift: i }));
+  const out = RR.DRIFT_LEVELS.map((L, i) => B(30 + (i % 5) * 86, 52 + ((i / 5) | 0) * 86, 80, 78, '', () => { state.driftK = i; go('carselect'); }, { drift: i }));
   out.push(B(8, 246, 64, 20, 'Back', () => go('menu')));
   return out;
 }
-function startDrift() {
-  const k = state.driftK, L = RR.DRIFT_LEVELS[k];
-  const def = { name: L.name, w: L.w, pts: L.pts, cuts: [], theme: L.theme, time: L.time, laps: L.laps || 2, bots: RR.DRIFT_SCORE.bots, diff: L.diff || 'normal', trees: 60, umb: 2, seed: 300 + k * 11 };
+function startDrift() {   // solo time attack against your own best run (ghost); no bots, no pick-ups
+  const k = state.driftK, def = driftDef(k), gh = loadGhost('dt' + k);
   state.track = -1; state.paused = false; state.pauseOpts = false; clearInput(); state.custom = null; state.twoPlayer = false;
   save.lastCar = state.carSel[0]; persist();
-  state.race = RR.createRace({ trackIndex: 0, trackDef: def, players: [{ carId: state.carSel[0] }], drift: true, autoStunts: { boost: 2, bridge: 1 } });
-  state.race.driftK = k;
-  { const me = state.race.cars.find(c => c.player === 0); state.cams = [{ car: me, x: me.x, y: me.y }]; }   // follow YOUR car (bots line up first on the grid)
+  const race = state.race = RR.createRace({ trackIndex: 0, trackDef: def, players: [{ carId: state.carSel[0] }], mode: 'ghost', ghost: gh });
+  race.driftTT = k; race.pickups = []; race.laps = def.laps; race.driftZone = RR.driftZones(race.T);
+  { const me = race.cars.find(c => c.player === 0); state.cams = [{ car: me, x: me.x, y: me.y }]; }
   state.screen = 'race'; state.focus = 0; state.acc = 0; state.result = null;
   A.setMusic('game'); A.setEngines(1);
+  lbFetch(driftKey(k), true);
 }
 function finishDrift(race) {
-  const me = race.cars.find(c => c.player === 0), k = race.driftK, D = driftSave();
-  RR.bankDrift(race, me);
-  const pos = RR.positionOf(race, me), raw = race.drift.score, bonus = RR.DRIFT_SCORE.placeBonus[pos - 1] || 1, score = Math.round(raw * bonus);
-  const stars = driftStars(k, score), before = driftUnlocked();
-  statBump('races'); if (pos === 1) statBump('wins');
-  const res = { mode: 'drift', k, score, raw, pos, bonus, stars, best: D[k] || 0, bestChain: race.drift.bestChain, crashes: race.drift.crashes, time: me.finishTime, targets: driftTargets(k) };
-  if (score > (D[k] || 0)) { D[k] = score; res.newBest = true; }
-  res.unlockedNext = driftUnlocked() > before;
-  lbAdd('d' + k, score, true); persist(); checkChallenges();
-  state.result = res; A.stopEngines(); A.play('finish'); go('results'); state.focus = buttons().length - 1;
+  const me = race.cars.find(c => c.player === 0), k = race.driftTT, D = driftTT(), t = me.finishTime, prev = D[k];
+  const res = { mode: 'drifttt', k, time: t, best: prev, newBest: prev == null || t < prev };
+  if (res.newBest) { D[k] = t; res.best = t; if (race.rec) saveGhost('dt' + k, race.rec, t, state.carSel[0], race.recK); if (prev != null) statBump('driftPBs'); }
+  lbAdd(driftKey(k), t); statBump('races'); persist(); checkChallenges();
+  state.result = res; A.stopEngines(); A.play('finish'); go('results'); state.focus = buttons().length - 1; lbFetch(driftKey(k), true);
 }
 function drawDriftZones(race, inView) {   // glowing pink / cyan kerb dashes along both road edges through each zone
   const T = race.T, Z = race.driftZone, hw = T.W / 2 - 4, t = performance.now() / 400;
@@ -3786,18 +3792,17 @@ function drawDrift() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ff7ad8'; ctx.font = 'bold 22px "Trebuchet MS","Segoe UI",sans-serif';
   ctx.fillText('DRIFT TRIALS', VW / 2, RR.MOBILE ? 30 : 22);
   ctx.fillStyle = '#d8c8ff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif';
-  ctx.fillText(RR.MOBILE ? 'Race 5 bots. Drift to score, zones x2!' : 'Race 5 bots and drift to score. Chain drifts for up to x5, DRIFT ZONES score x2, finishing 1st-3rd adds a bonus.', VW / 2, RR.MOBILE ? 50 : 38);
-  const D = driftSave(), un = driftUnlocked(), list = buttons();
+  ctx.fillText(RR.MOBILE ? 'Just you, your ghost and the clock. Drift faster!' : 'No bots, no pick-ups: just you, the ghost of your best run and the leaderboard. Drift your way to a faster time.', VW / 2, RR.MOBILE ? 50 : 38);
+  const D = driftTT(), list = buttons();
   list.forEach((b, i) => {
     if (b.drift == null) { drawButton(b, i === state.focus); return; }
-    const k = b.drift, L = RR.DRIFT_LEVELS[k], locked = k > un, foc = i === state.focus, best = D[k] || 0, st = driftStars(k, best);
+    const k = b.drift, L = RR.DRIFT_LEVELS[k], locked = false, foc = i === state.focus, best = D[k];
     ctx.fillStyle = locked ? 'rgba(40,30,60,0.8)' : foc ? 'rgba(255,90,200,0.35)' : 'rgba(60,40,100,0.75)'; roundRect(ctx, b.x, b.y, b.w, b.h, 7); ctx.fill();
     ctx.strokeStyle = foc ? '#ffd0f0' : 'rgba(255,255,255,0.25)'; ctx.lineWidth = foc ? 2 : 1; roundRect(ctx, b.x, b.y, b.w, b.h, 7); ctx.stroke();
     const th = RR.THEMES[L.theme]; drawDriftThumb(L, b.x + 6, b.y + 14, b.w - 12, b.h - 40, locked);
     ctx.fillStyle = locked ? '#8a80a0' : '#fff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.textAlign = 'left'; ctx.fillText((k + 1) + '', b.x + 5, b.y + 8);
     ctx.textAlign = 'center'; ctx.font = 'bold 8px "Trebuchet MS",sans-serif'; ctx.fillText(locked ? 'LOCKED' : L.name, b.x + b.w / 2, b.y + b.h - 18);
-    if (!locked) { ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.fillText('★'.repeat(st) + '☆'.repeat(3 - st), b.x + b.w / 2, b.y + b.h - 8);
-      if (best) { ctx.fillStyle = '#d8c8ff'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.textAlign = 'right'; ctx.fillText(best, b.x + b.w - 5, b.y + 8); } }
+    ctx.fillStyle = best != null ? '#ffcf40' : '#a898c8'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.fillText(best != null ? fmtTime(best) : 'no time yet', b.x + b.w / 2, b.y + b.h - 8);
   });
 }
 const driftThumbs = {};
@@ -3816,13 +3821,11 @@ function drawDriftResults(r) {
   const g = ctx.createLinearGradient(0, 0, 0, VH); g.addColorStop(0, '#2a0f3a'); g.addColorStop(1, '#0b0b24'); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   const L = RR.DRIFT_LEVELS[r.k], M = RR.MOBILE, cx = VW / 2;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#d8c8ff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.fillText('Drift Trial ' + (r.k + 1) + ' — ' + L.name, cx, M ? 80 : 22);
-  ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 34px "Trebuchet MS",sans-serif'; ctx.fillText(String(r.score), cx, M ? 130 : 58);
-  ctx.font = 'bold 26px "Trebuchet MS",sans-serif'; ctx.fillText('★'.repeat(r.stars) + '☆'.repeat(3 - r.stars), cx, M ? 172 : 92);
-  ctx.fillStyle = '#9fe9ff'; ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; ctx.fillText('Finished ' + r.pos + ordinal(r.pos) + ' of ' + (RR.DRIFT_SCORE.bots + 1) + '  -  drift ' + r.raw + (r.bonus > 1 ? '  x' + r.bonus + ' place bonus' : ''), cx, M ? 196 : 108);
-  ctx.font = 'bold 10px "Trebuchet MS",sans-serif'; ctx.fillStyle = '#fff';
-  const lines = ['Stars at  ' + r.targets.join('  /  ') + '   (1st x1.5, 2nd x1.3, 3rd x1.15)', 'Best combo  ' + r.bestChain + '      Crashes  ' + r.crashes, (r.newBest ? 'NEW BEST SCORE!' : 'Best  ' + r.best) + (r.unlockedNext ? '      Next level unlocked!' : '')];
-  lines.forEach((t, i) => { ctx.fillStyle = i === 2 && (r.newBest || r.unlockedNext) ? '#7cff6a' : '#fff'; ctx.fillText(t, cx, (M ? 222 : 130) + i * 16); });
+  ctx.fillStyle = '#ff7ad8'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.fillText('DRIFT TRIAL ' + (r.k + 1) + '  -  ' + L.name, cx, M ? 70 : 20);
+  ctx.fillStyle = '#ffcf40'; ctx.font = 'bold 30px "Trebuchet MS",sans-serif'; ctx.fillText(fmtTime(r.time), cx, M ? 110 : 52);
+  ctx.fillStyle = r.newBest ? '#7cff6a' : '#fff'; ctx.font = 'bold 11px "Trebuchet MS",sans-serif'; ctx.fillText(r.newBest ? 'NEW PERSONAL BEST!' : 'Your best: ' + fmtTime(r.best) + '  (' + (r.time - r.best >= 0 ? '+' : '') + (r.time - r.best).toFixed(2) + 's)', cx, M ? 138 : 78);
+  ctx.fillStyle = '#d8c8ff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.fillText('LEADERBOARD - fastest times', cx, M ? 168 : 94);
+  drawDailyBoard(driftKey(r.k), M ? 30 : 140, M ? 240 : 340, M ? 186 : 106, M ? 10 : 8);
   drawButtons();
 }
 // ---------------- buttons per screen ----------------
@@ -3883,7 +3886,7 @@ function buttonsLandscape() {
         B(...R(25, 700, 505, 842), '1 Player', () => { state.custom = null; state.campK = null; state.driftK = null; state.twoPlayer = false; state.selPlayer = 0; go('carselect'); }, A2),
         B(...R(512, 700, 1000, 842), '2 Player', () => { if (RR.MOBILE) { notice('2 Player split-screen is in the\nPC version. On phone, race a friend\nwith Online Play: it works phone-to-\nphone and phone-to-PC!'); return; } state.custom = null; state.campK = null; state.driftK = null; state.twoPlayer = true; state.selPlayer = 0; go('carselect'); }, A2),
         B(...R(22, 862, 505, 1002), 'Story Mode', () => openCamp(), A2),
-        B(...R(510, 862, 1002, 1002), 'Drift Trials', () => { state.custom = null; state.campK = null; state.twoPlayer = false; state.selPlayer = 0; go('drift'); state.focus = Math.min(driftUnlocked(), RR.DRIFT_LEVELS.length - 1); }, A2),
+        B(...R(510, 862, 1002, 1002), 'Drift Trials', () => { state.custom = null; state.campK = null; state.twoPlayer = false; state.selPlayer = 0; go('drift'); state.focus = 0; }, A2),
         B(...R(22, 1020, 500, 1160), 'Online Play', () => netOverlay(), A2),
         B(...R(512, 1020, 1002, 1160), 'Track Maker', () => RR.Editor.openList(), A2),
         B(...R(20, 22, 415, 100), 'Leaderboards', () => go('boards'), A2),
@@ -3931,8 +3934,8 @@ function buttonsLandscape() {
       if (state.paused && state.pauseOpts) return optionsButtons(() => { state.pauseOpts = false; state.focus = 3; });
       if (state.paused) return [
         B(180, 80, 120, 26, 'Resume', () => { state.paused = false; clearInput(); }),
-        B(180, 111, 120, 26, 'Restart', () => state.race.mode === 'net' ? notice('An online race can\'t be restarted.\nThe host can pick the next race when it ends.') : state.race.video ? startVideoTest(state.videoMode === 'replay' ? 'replay' : 'drive') : state.race.tut ? startTutorial() : state.race.daily ? startDaily() : state.race.mode === 'ghost' && !state.race.custom ? startGhostRace(state.track) : state.race.camp != null ? startCampRace() : state.race.drift ? startDrift() : state.race.custom ? startCustom() : startRace(state.track)),
-        B(180, 142, 120, 26, 'Quit', () => { if (state.race.mode === 'net') { netLeave(); return; } if (state.race.tut) { finishTutorial(false); return; } if (state.race.camp != null) { state.race = null; A.stopEngines(); go('camp'); return; } if (state.race.drift) { const k = state.driftK; state.race = null; go('drift'); state.focus = k; return; } if (state.race.custom) { backToCustom(); return; } state.race = null; state.videoMode = null; go('trackselect'); }),
+        B(180, 111, 120, 26, 'Restart', () => state.race.mode === 'net' ? notice('An online race can\'t be restarted.\nThe host can pick the next race when it ends.') : state.race.video ? startVideoTest(state.videoMode === 'replay' ? 'replay' : 'drive') : state.race.tut ? startTutorial() : state.race.daily ? startDaily() : state.race.driftTT != null ? startDrift() : state.race.mode === 'ghost' && !state.race.custom ? startGhostRace(state.track) : state.race.camp != null ? startCampRace() : state.race.drift ? startDrift() : state.race.custom ? startCustom() : startRace(state.track)),
+        B(180, 142, 120, 26, 'Quit', () => { if (state.race.mode === 'net') { netLeave(); return; } if (state.race.tut) { finishTutorial(false); return; } if (state.race.camp != null) { state.race = null; A.stopEngines(); go('camp'); return; } if (state.race.driftTT != null) { const k = state.driftK; state.race = null; go('drift'); state.focus = k; return; } if (state.race.custom) { backToCustom(); return; } state.race = null; state.videoMode = null; go('trackselect'); }),
         B(180, 173, 120, 26, 'Options', () => { state.pauseOpts = true; state.focus = 0; }),
         B(180, 204, 120, 26, 'Photo Mode', () => photoStart()),
       ].concat(RR.MOBILE ? [B(150, 237, 180, 24, 'Song: ' + A.SONGS[A.songIdx].name, () => A.stepSong(1), { song: 1 })] : []);
@@ -3941,8 +3944,9 @@ function buttonsLandscape() {
     case 'results': {
       const R = state.result;
       if (R && R.mode === 'daily') return [B(16, 226, 74, 34, 'Back', () => { state.race = null; go('daily'); }, { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startDaily(), { blue: 1 })].concat(canReplay() ? [B(180, 226, 104, 34, 'Watch Replay', () => startReplay(), { blue: 1, replayBtn: 1 })] : []);
-      if (R && R.mode === 'drift') { const k = state.driftK, out = [B(16, 226, 74, 34, 'Levels', () => { state.race = null; go('drift'); state.focus = k; }, { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startDrift(), { blue: 1 })];
-        if (k + 1 < RR.DRIFT_LEVELS.length && k + 1 <= driftUnlocked()) out.push(B(320, 222, 144, 40, 'Next', () => { state.driftK = k + 1; startDrift(); }, { big: 1, blue: 1 })); return out; }
+      if (R && R.mode === 'drifttt') { const k = state.driftK, out = [B(16, 226, 74, 34, 'Tracks', () => { state.race = null; go('drift'); state.focus = k; }, { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startDrift(), { blue: 1 })];
+        if (canReplay()) out.push(B(180, 226, 104, 34, 'Watch Replay', () => startReplay(), { blue: 1, replayBtn: 1 }));
+        if (k + 1 < RR.DRIFT_LEVELS.length) out.push(B(320, 222, 144, 40, 'Next Track', () => { state.driftK = k + 1; startDrift(); }, { big: 1, blue: 1 })); return out; }
       if (R && R.mode === 'ghost' && R.custom) return [B(16, 226, 74, 34, 'Back', () => backToCustom(), { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startCustom(), { blue: 1 }), B(320, 222, 144, 40, 'Race Bots', () => { state.custom.ghost = false; startCustom(); }, { big: 1, blue: 1 })];
       if (R && R.mode === 'ghost') return [B(16, 226, 74, 34, 'Back', () => { state.race = null; go('trackselect'); }, { blue: 1 }), B(98, 226, 74, 34, 'Retry', () => startGhostRace(state.track), { blue: 1 }),
         B(320, 222, 144, 40, 'Race Bots', () => startRace(state.track), { big: 1, blue: 1 })];
@@ -4650,7 +4654,7 @@ function finishRace() {
   if (race.replay) return endReplay();
   if (race.tut) return finishTutorial(true);
   if (race.daily) return finishDaily(race);
-  if (race.drift) return finishDrift(race);
+  if (race.driftTT != null) return finishDrift(race);
   if (race.mode) return finishModeRace(race);
   // fast-forward remaining opponents so they get real finish times
   race.cars.forEach(c => c.ai = true);
@@ -5367,7 +5371,7 @@ function drawModeResults(r) {
 }
 function drawResults() {
   const r = state.result, race = state.race;
-  if (r && r.mode === 'drift') { drawDriftResults(r); return; }
+  if (r && r.mode === 'drifttt') { drawDriftResults(r); return; }
   if (r && r.mode === 'daily') { drawDailyResults(r); return; }
   if (r && r.mode) { drawModeResults(r); return; }
   ctx.setTransform(S, 0, 0, S, 0, 0);
@@ -5629,11 +5633,13 @@ function fxStats() {
   const s = stats0();
   if (FXS.drift || FXS.air) { s.driftSec = (s.driftSec || 0) + FXS.drift; s.airSec = (s.airSec || 0) + FXS.air; FXS.drift = 0; FXS.air = 0; persist(); }
   return Object.assign({}, s, { decalsDone: RR.CHALLENGES.filter(c => chDone().includes(c.id)).length, golds: Object.values(save.medals || {}).filter(m => m >= 3).length,
+    racesFinished: (save.best || []).filter(t => t > 0).length, racesWon: (save.stars || []).filter(k => k >= 3).length,
     club: save.club ? 1 : 0, comeback: s.comebacks || 0 });
 }
 function checkFxChallenges() {
   const st = fxStats(), done = fxDone(); let any = false;
-  for (const c of RR.FX_CHALLENGES) if (!done.includes(c.id) && (c.stat(st) || 0) >= c.goal) { done.push(c.id); any = true; toast((c.hidden ? 'SECRET FOUND: ' : 'Challenge complete: ') + c.name + '!  Unlocked: ' + RR.fxRewardName(c)); }
+  for (const c of RR.FX_CHALLENGES) if (!done.includes(c.id) && (c.stat(st) || 0) >= c.goal) { done.push(c.id); any = true;
+    if (c.big) notice((state.notice ? state.notice + '\n\n' : '') + '*** ' + c.name.toUpperCase() + ' ***\n' + c.desc + '!\nReward: ' + RR.fxRewardName(c)); else toast((c.hidden ? 'SECRET FOUND: ' : 'Challenge complete: ') + c.name + '!  Unlocked: ' + RR.fxRewardName(c)); }
   if (any) persist();
 }
 function fxUnlockFor(kind, k) { return RR.FX_CHALLENGES.find(c => c[kind] === k); }
@@ -5680,6 +5686,10 @@ function drawTrailPts(kind, tp, sprite, sc) {
   } else if (kind === 'pixel') {
     const P = ['#ff3a3a', '#ffcf20', '#3aff6a', '#3a9aff', '#ff3aff']; const g = 4 * sc;
     tp.forEach((p, i) => { if (i % 3) return; const f = Math.max(0, 1 - p.t / L); ctx.globalAlpha = f; ctx.fillStyle = P[(i / 3 | 0) % P.length]; ctx.fillRect(Math.round(p.x / g) * g - g / 2, Math.round(p.y / g) * g - g / 2, g, g); });
+  } else if (kind === 'lightning') {
+    ctx.globalCompositeOperation = 'lighter';
+    const zig = (w, a) => { ctx.strokeStyle = `rgba(150,200,255,${a})`; ctx.lineWidth = w * sc; ctx.beginPath(); tp.forEach((p, i) => { const f = Math.max(0, 1 - p.t / L), j = (Math.sin(i * 2.7 + t * 40) * 5 + (p.r - 0.5) * 4) * sc * f; ctx[i ? 'lineTo' : 'moveTo'](p.x + j * Math.cos(p.a), p.y + j * Math.sin(p.a)); }); ctx.stroke(); };
+    zig(6, 0.18); zig(2, 0.95);
   } else if (kind === 'ghost' && sprite) {
     ctx.imageSmoothingEnabled = true;
     for (let i = tp.length - 8; i >= 0; i -= 8) { const p = tp[i], f = Math.max(0, 1 - p.t / L); ctx.save(); ctx.translate(p.cx, p.cy); ctx.rotate(p.a); ctx.globalAlpha = 0.3 * f; ctx.filter = 'brightness(1.6) saturate(0.4)'; ctx.drawImage(sprite, -10 * sc, -13 * sc, 20 * sc, 26 * sc); ctx.restore(); }
@@ -5743,7 +5753,7 @@ function drawChallenges() {
   ctx.fillStyle = '#ffd8c8'; ctx.font = 'bold 8px "Trebuchet MS",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(L.filter(c => done.includes(c.id)).length + ' / ' + L.length + ' complete  -  ' + (fxp ? (M ? 'unlock smoke colours & trails' : 'each unlocks a tyre smoke colour or trail (3 are secret!)') : (M ? 'each unlocks a car decal' : 'each one unlocks a car decal (pick it in Choose Your Wheels)')), VW / 2, M ? 44 : 33);
   L.forEach((c, i) => {
-    const h = M ? (fxp ? 25 : 28) : (fxp ? 26 : 30), gap = M ? (fxp ? 1 : 2) : 3;
+    const h = M ? (fxp ? 22 : 28) : (fxp ? 23 : 30), gap = M ? 1 : fxp ? 2 : 3;
     const col = M ? 0 : i % 2, row = M ? i : (i / 2) | 0, w = M ? 254 : 228, x = M ? 8 : 10 + col * 232, y = (M ? 52 : 40) + row * (h + gap);
     const ok = done.includes(c.id), v = Math.min(c.goal, c.stat(st) || 0), secret = c.hidden && !ok;
     ctx.fillStyle = ok ? 'rgba(40,110,40,0.85)' : secret ? 'rgba(30,10,60,0.85)' : 'rgba(60,10,10,0.85)'; roundRect(ctx, x, y, w, h, 6); ctx.fill();
@@ -5753,10 +5763,10 @@ function drawChallenges() {
     else { ctx.globalAlpha = ok ? 1 : 0.45; if (c.smoke) { ctx.imageSmoothingEnabled = true; ctx.drawImage(smokeSpr(c.smoke, (performance.now() / 300) % 6.28), x + 4, y + h / 2 - 9, 18, 18); }
       if (c.trail) { ctx.save(); const tp = []; for (let k = 10; k >= 0; k--) tp.push({ x: x + 4 + (10 - k) * 2.2, y: y + h / 2 + Math.sin(k * 0.6 + performance.now() / 200) * 2, cx: x + 20, cy: y + h / 2, a: Math.PI / 2, t: k * 0.05, r: (k * 0.618) % 1 }); drawTrailPts(c.trail, tp, carSprites[5], 0.6); ctx.restore(); }
       ctx.globalAlpha = 1; }
-    ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.fillText(secret ? '??? Secret' : c.name, x + 32, y + (fxp ? 8 : 9));
-    ctx.fillStyle = '#ffd0c0'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.fillText(secret ? 'Hint: ' + c.hint : c.desc + '  ->  ' + (fxp ? RR.fxRewardName(c) : RR.DECALS[c.decal].name), x + 32, y + (fxp ? 18 : 19));
+    ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Trebuchet MS",sans-serif'; ctx.fillText(secret ? '??? Secret' : c.name, x + 32, y + (fxp ? 7 : 9));
+    ctx.fillStyle = '#ffd0c0'; ctx.font = '7px "Trebuchet MS",sans-serif'; ctx.fillText(secret ? 'Hint: ' + c.hint : c.desc + '  ->  ' + (fxp ? RR.fxRewardName(c) : RR.DECALS[c.decal].name), x + 32, y + (fxp ? 16 : 19));
     if (!secret) { const bw = 44; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x + w - bw - 6, y + 6, bw, 5); ctx.fillStyle = ok ? '#7cff6a' : '#ffb020'; ctx.fillRect(x + w - bw - 6, y + 6, bw * v / c.goal, 5);
-      ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Trebuchet MS",sans-serif'; ctx.fillText(ok ? 'DONE' : (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v) + ' / ' + (c.goal >= 1000 ? c.goal / 1000 + 'k' : c.goal), x + w - 6, y + (fxp ? 18 : 20)); }
+      ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Trebuchet MS",sans-serif'; ctx.fillText(ok ? 'DONE' : (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v) + ' / ' + (c.goal >= 1000 ? c.goal / 1000 + 'k' : c.goal), x + w - 6, y + (fxp ? 16 : 20)); }
   });
   ctx.restore(); drawButtons();
 }
@@ -5778,7 +5788,8 @@ function secretTap(x, y) {
   return true;
 }
 function secretFound() {
-  const s = stats0(); if (!s.konami) { s.konami = 1; persist(); }
+  const s = stats0(), first = !fxDone().includes('sx_code'); if (!s.konami) { s.konami = 1; persist(); }
+  if (!first) return;   // already found: no message the second time
   A.play('nitro'); checkChallenges();
   if (!fxDone().includes('sx_code')) return; notice('*** OLD SCHOOL ***\nSecret found! Pixel trail unlocked.\nPick it in Choose Your Wheels.');
 }
