@@ -1,12 +1,12 @@
 {
-  "name": "Retro Racing (fan recreation)",
-  "short_name": "Retro Racing",
+  "name": "TopDown Racer",
+  "short_name": "TopDown Racer",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
   "orientation": "portrait",
-  "background_color": "#2e0505",
-  "theme_color": "#2e0505",
+  "background_color": "#0e0a28",
+  "theme_color": "#0e0a28",
   "icons": [
     {
       "src": "icons/icon-192.png",
