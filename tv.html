@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>TopDown Racer TV</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0e0a28">
+<link rel="manifest" href="manifest-tv.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+</head><body style="background:#0e0a28">
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
+if (!/Headless|Lighthouse|PWABuilder/i.test(navigator.userAgent)) setTimeout(function(){ location.replace('index.html?tv=1'); }, 300);
+</script>
+</body></html>
