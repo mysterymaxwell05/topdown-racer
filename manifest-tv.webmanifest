@@ -1,0 +1,15 @@
+{
+  "id": "./tv.html",
+  "name": "TopDown Racer TV",
+  "short_name": "TopDown TV",
+  "start_url": "./index.html?tv=1",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0e0a28",
+  "theme_color": "#0e0a28",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
